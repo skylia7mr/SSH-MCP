@@ -11,11 +11,14 @@ from ssh_mcp.api.router import create_router
 from ssh_mcp.auth.middleware import LocalSecurity
 from ssh_mcp.config import Settings, get_settings
 from ssh_mcp.errors import ToolError
+from ssh_mcp.mcp_server.server import build_mcp
 from ssh_mcp.services import Services
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
     s = Services(settings or get_settings())
+    mcp = build_mcp(s)
+    mcp_app = mcp.streamable_http_app(stateless_http=True, json_response=True)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -23,11 +26,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             f"SSH MCP 本机一次性配对码：{s.auth.pairing.code}（{s.settings.pairing_ttl_seconds} 秒有效）",
             flush=True,
         )
-        try:
-            yield
-        finally:
-            await s.registry.close()
-            s.auth.browser = None
+        async with mcp.session_manager.run():
+            s.tasks.start()
+            try:
+                yield
+            finally:
+                await s.tasks.close()
+                await s.registry.close()
+                s.auth.browser = None
 
     app = FastAPI(lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
     app.state.services = s
@@ -57,6 +63,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return {"status": "ok"}
 
     app.include_router(create_router(s))
+    app.router.routes.extend(mcp_app.routes)
     dist = Path(__file__).resolve().parents[2] / "frontend" / "dist"
     if (dist / "assets").exists():
         app.mount("/assets", StaticFiles(directory=dist / "assets"), name="assets")

@@ -1,3 +1,4 @@
+import asyncio
 import hashlib
 import secrets
 import time
@@ -34,6 +35,7 @@ class PairingService:
 class TokenService:
     def __init__(self, configured: str | None = None) -> None:
         self._token = configured or secrets.token_urlsafe(32)
+        self.revoked = asyncio.Event()
 
     @property
     def token_hint(self) -> str:
@@ -43,6 +45,8 @@ class TokenService:
         return candidate is not None and secrets.compare_digest(candidate, self._token)
 
     def rotate(self) -> str:
+        self.revoked.set()
+        self.revoked = asyncio.Event()
         self._token = secrets.token_urlsafe(32)
         return self._token
 

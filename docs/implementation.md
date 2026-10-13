@@ -7,7 +7,7 @@
 - [x] 1. 工具链、锁文件、实施方案、第一阶段提交
 - [x] 2. 配对、Web/MCP 独立认证、host key、真实 SSH、阶段提交
 - [x] 3. 真实 sshd/sudo 可行性、AST 策略、行为矩阵、阶段提交
-- [ ] 4. 有界任务、输出、官方 MCP HTTP 集成、阶段提交
+- [x] 4. 有界任务、输出、官方 MCP HTTP 集成、阶段提交
 - [ ] 5. 中文 React 工作台、订阅、真实浏览器 E2E、阶段提交
 - [ ] 6. Docker Compose、CI、文档、全量验收、交付报告、阶段提交
 
@@ -64,3 +64,14 @@
 - 更新后的真实 sudo 包装重新运行独立实验，24/24 通过（alice/bash、bob/dash、nopass/bash）；密码 pipe 分离、多个 sudo、跨 7 字节提示过滤均通过。
 - AST + 输出单元用例：40 passed；普通文本、实际 command node、command/env 前缀、动态/嵌套 shell/危险选项与并行多 sudo 明确拒绝。
 - 原子授权、sudo 运行快照、错误/缺失密码、零 timestamp 缓存拒绝等完整任务行为在后续任务阶段的真实测试中验证。
+
+## 第四阶段验证
+
+- 完整单元 + 真实 SSH/任务/MCP HTTP + 协议故障测试：60 passed（32.71 秒）。官方 SDK initialize/tools/list/tools/call、双账号选择、stdout/stderr、退出 9、长任务/分段读取/取消与持久 SSE 轮换撤销均通过。
+- 每流 1 MiB 实测：各产生 1,500,000 字节，只保留 1,048,576 字节，明确截断且继续排空至退出。全局/单连接并发、排队、全部活动记录拒绝、只淘汰完成记录、保留过期均通过。
+- 排队关闭 sudo 整条拒绝；已运行任务保留密码快照、关闭后连接密码释放；正确/错误/缺密码、NOPASSWD、command/env 前缀、管道/重定向等真实案例通过。timestamp_timeout=0 在执行 sudo 子命令前明确拒绝。
+- 连接认证超时/取消释放输入；协议 fixture 未报告退出码时返回 SSH_EXIT_STATUS_MISSING，不误报成功；掉线活动/排队任务均不重放，应用关闭回收任务槽位。
+- token 轮换中断正在等待的 HTTP 请求，但已提交后台任务继续完成；持久 SSE 也结束。敏感 API/MCP 响应 no-store。
+- Codex CLI 0.159.2 真实实测：1 passed（124.09 秒），经 HTTP 发现并调用 ssh_execute，得到 codex-http-proof/alice 与退出 0。CLI 本地 read-only 沙箱，两个工具使用限定服务的 approval_mode=approve。
+- 初次 Codex 实测发现默认审批策略会阻止 destructive 工具，补充客户端工具预授权后通过；未把执行工具伪装只读，未更改用户全局 config。
+- SDK 的 SSE process watcher 默认依赖进程 event loop 关闭；pytest HTTP fixture 显式取消该 watcher，避免复用测试 loop 时 pending task 提示。慢认证协议 fixture 自行取消其模拟服务器认证协程，生产资源无需此测试特例。

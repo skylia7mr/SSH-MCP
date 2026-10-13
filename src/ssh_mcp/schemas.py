@@ -104,6 +104,7 @@ class RunView(BaseModel):
     run_id: str
     session_id: str
     command: str
+    command_truncated: bool = False
     source: str = "MCP"
     created_at: datetime
     policy_version: int | None = None

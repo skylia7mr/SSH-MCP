@@ -77,6 +77,7 @@ class SessionRegistry:
         credentials = OneShotCredentials(
             request.password.get_secret_value() if request.password else None, None
         )
+        await session.lock.acquire()
         try:
             if request.private_key:
                 credentials.key = asyncssh.import_private_key(
@@ -111,15 +112,22 @@ class SessionRegistry:
             session.status, session.error = SessionStatus.failed, "SSH_AUTHENTICATION_FAILED"
         except asyncssh.HostKeyNotVerifiable:
             session.status, session.error = SessionStatus.failed, "HOST_KEY_CHANGED"
-        except (asyncssh.KeyImportError, ValueError):
+        except (asyncssh.KeyImportError, asyncssh.KeyEncryptionError, ValueError):
             session.status, session.error = SessionStatus.failed, "INVALID_PRIVATE_KEY"
         except TimeoutError:
             session.status, session.error = SessionStatus.failed, "SSH_TIMEOUT"
         except (OSError, asyncssh.Error):
             session.status, session.error = SessionStatus.failed, "SSH_FAILURE"
+        except asyncio.CancelledError:
+            session.status, session.error = SessionStatus.failed, "SSH_CONNECT_CANCELLED"
+            if session.connection:
+                session.connection.close()
+                await session.connection.wait_closed()
+            raise
         finally:
             credentials.clear()
             request.password = request.private_key = request.passphrase = None
+            session.lock.release()
         return session.view()
 
     async def _monitor(self, session: Session) -> None:
