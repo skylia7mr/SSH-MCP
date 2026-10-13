@@ -1,0 +1,151 @@
+<div id="ssh-workbench-preview">
+  <style>
+    #ssh-workbench-preview { color-scheme: light dark; --sw-bg: light-dark(#f5f7fa,#11171f); --sw-panel: light-dark(#ffffff,#18212d); --sw-fg: light-dark(#182333,#e5eaf1); --sw-muted: light-dark(#526174,#abb8c9); --sw-line: light-dark(#d9e0e9,#334052); --sw-active: light-dark(#e8f0ff,#263c5a); --sw-blue: light-dark(#2458b8,#99bcff); --sw-ok: light-dark(#276d46,#93d7b0); --sw-danger: light-dark(#ad3933,#ffa49d); font-family: system-ui, sans-serif; color: var(--sw-fg); }
+    #ssh-workbench-preview * { box-sizing: border-box; }
+    #ssh-workbench-preview .sw-app { background: var(--sw-bg); border: 1px solid var(--sw-line); border-radius: 12px; min-height: 640px; font-size: 14px; line-height: 1.5; overflow-wrap: anywhere; }
+    #ssh-workbench-preview .sw-header { padding: 20px 100px 16px 20px; display: flex; align-items: center; gap: 14px; flex-wrap: wrap; background: var(--sw-panel); border-radius: 12px 12px 0 0; border-bottom: 1px solid var(--sw-line); }
+    #ssh-workbench-preview .sw-brand { margin-right: auto; }
+    #ssh-workbench-preview .sw-brand strong { display: block; font-size: 18px; font-weight: 600; }
+    #ssh-workbench-preview .sw-muted { color: var(--sw-muted); font-size: 12px; }
+    #ssh-workbench-preview button { font: inherit; color: inherit; padding: 7px 12px; background: var(--sw-panel); border: 1px solid var(--sw-line); border-radius: 7px; }
+    #ssh-workbench-preview .sw-primary { color: light-dark(#ffffff,#142033); background: var(--sw-blue); border-color: var(--sw-blue); }
+    #ssh-workbench-preview .sw-content { display: grid; grid-template-columns: 240px minmax(0,1fr); min-height: 546px; }
+    #ssh-workbench-preview .sw-sidebar { padding: 18px 12px; border-right: 1px solid var(--sw-line); background: var(--sw-panel); }
+    #ssh-workbench-preview .sw-section-title { margin: 0 0 12px; color: var(--sw-muted); font-size: 12px; font-weight: 500; }
+    #ssh-workbench-preview .sw-connections { display: grid; gap: 7px; }
+    #ssh-workbench-preview .sw-connection { width: 100%; text-align: left; padding: 12px; background: transparent; border-color: transparent; }
+    #ssh-workbench-preview .sw-connection[aria-pressed="true"] { background: var(--sw-active); border-color: var(--sw-line); }
+    #ssh-workbench-preview .sw-connection strong { display: block; font-weight: 500; }
+    #ssh-workbench-preview .sw-connection small { display: block; font-size: 12px; color: var(--sw-muted); }
+    #ssh-workbench-preview .sw-status { color: var(--sw-ok); font-size: 12px; }
+    #ssh-workbench-preview .sw-main { min-width: 0; padding: 22px; }
+    #ssh-workbench-preview .sw-title-row { display: flex; align-items: flex-start; gap: 12px; flex-wrap: wrap; }
+    #ssh-workbench-preview h2 { font-size: 18px; margin: 0; font-weight: 600; }
+    #ssh-workbench-preview .sw-title { flex: 1; min-width: 160px; }
+    #ssh-workbench-preview .sw-policy { margin: 18px 0; padding: 12px 14px; border: 1px solid var(--sw-line); border-radius: 8px; background: var(--sw-panel); display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+    #ssh-workbench-preview .sw-policy label { display: flex; align-items: center; gap: 9px; font-weight: 500; }
+    #ssh-workbench-preview input[type="checkbox"] { width: 18px; height: 18px; accent-color: var(--sw-blue); }
+    #ssh-workbench-preview .sw-policy-state { margin-left: auto; font-size: 12px; color: var(--sw-muted); }
+    #ssh-workbench-preview .sw-run-layout { display: grid; grid-template-columns: 190px minmax(0,1fr); border: 1px solid var(--sw-line); border-radius: 8px; background: var(--sw-panel); }
+    #ssh-workbench-preview .sw-runs { padding: 12px; border-right: 1px solid var(--sw-line); }
+    #ssh-workbench-preview .sw-runs button { display: block; width: 100%; text-align: left; background: transparent; border-color: transparent; margin-bottom: 5px; }
+    #ssh-workbench-preview .sw-runs button[aria-pressed="true"] { background: var(--sw-active); }
+    #ssh-workbench-preview .sw-runs code { display: block; font-size: 12px; font-family: ui-monospace, monospace; }
+    #ssh-workbench-preview .sw-run-detail { padding: 16px; min-width: 0; }
+    #ssh-workbench-preview .sw-command { display: block; font-family: ui-monospace, monospace; white-space: pre-wrap; margin-bottom: 8px; }
+    #ssh-workbench-preview .sw-run-meta { display: flex; flex-wrap: wrap; gap: 12px; color: var(--sw-muted); font-size: 12px; }
+    #ssh-workbench-preview .sw-output-tabs { display: flex; flex-wrap: wrap; gap: 7px; margin: 18px 0 10px; }
+    #ssh-workbench-preview .sw-output-tabs button[aria-pressed="true"] { border-color: var(--sw-blue); color: var(--sw-blue); }
+    #ssh-workbench-preview pre { font-size: 12px; line-height: 1.8; font-family: ui-monospace, monospace; white-space: pre-wrap; overflow-wrap: anywhere; min-height: 140px; margin: 0; padding: 12px; background: var(--sw-bg); border-radius: 7px; }
+    #ssh-workbench-preview .sw-manual { margin-top: 18px; }
+    #ssh-workbench-preview textarea, #ssh-workbench-preview input[type="text"], #ssh-workbench-preview input[type="password"], #ssh-workbench-preview select { width: 100%; font: inherit; padding: 9px 11px; background: var(--sw-panel); color: var(--sw-fg); border: 1px solid var(--sw-line); border-radius: 6px; }
+    #ssh-workbench-preview .sw-manual textarea { display: block; margin: 6px 0 10px; resize: vertical; }
+    #ssh-workbench-preview .sw-table-content { padding: 18px 20px 0; }
+    #ssh-workbench-preview .sw-table-connections { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px; }
+    #ssh-workbench-preview .sw-table-connections .sw-connection { border: 1px solid var(--sw-line); background: var(--sw-panel); }
+    #ssh-workbench-preview .sw-table-connections .sw-connection[aria-pressed="true"] { background: var(--sw-active); }
+    #ssh-workbench-preview .sw-footer { padding: 12px 20px; font-size: 12px; color: var(--sw-muted); border-top: 1px solid var(--sw-line); }
+    #ssh-workbench-preview .sw-dialog { background: var(--sw-panel); border: 1px solid var(--sw-line); border-radius: 10px; padding: 20px; margin: 14px 0; color: var(--sw-fg); }
+    #ssh-workbench-preview .sw-form-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px; margin-top: 15px; }
+    #ssh-workbench-preview .sw-form-grid label { display: grid; gap: 5px; }
+    #ssh-workbench-preview .sw-dialog-actions { margin-top: 15px; display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+    #ssh-workbench-preview .sw-fingerprint { margin-top: 14px; padding: 12px; background: var(--sw-bg); border-radius: 6px; }
+    #ssh-workbench-preview [hidden] { display: none !important; }
+    @media (max-width:760px) { #ssh-workbench-preview .sw-content { grid-template-columns: 200px minmax(0,1fr); } #ssh-workbench-preview .sw-run-layout { grid-template-columns: 1fr; } #ssh-workbench-preview .sw-runs { border-right: 0; border-bottom: 1px solid var(--sw-line); display: flex; flex-wrap: wrap; gap: 5px; } #ssh-workbench-preview .sw-runs button { width: auto; } }
+    @media (max-width:540px) { #ssh-workbench-preview .sw-content { grid-template-columns: 1fr; } #ssh-workbench-preview .sw-sidebar { border-right: 0; border-bottom: 1px solid var(--sw-line); } #ssh-workbench-preview .sw-main { padding: 15px; } #ssh-workbench-preview .sw-header { padding: 16px 100px 16px 15px; } #ssh-workbench-preview .sw-table-connections, #ssh-workbench-preview .sw-form-grid { grid-template-columns: 1fr; } #ssh-workbench-preview .sw-policy-state { margin-left: 0; } }
+    @media (pointer:coarse) { #ssh-workbench-preview button { min-height: 44px; } #ssh-workbench-preview textarea, #ssh-workbench-preview input, #ssh-workbench-preview select { font-size: 16px; } #ssh-workbench-preview .sw-policy label { min-height: 44px; } }
+  </style>
+  <div class="viz-carousel" aria-label="SSH 工作台布局方案" data-previous-label="上一种布局" data-next-label="下一种布局">
+    <section data-variant="连接侧栏" aria-label="连接侧栏工作台">
+      <div class="sw-app" data-app="sidebar">
+        <header class="sw-header">
+          <div class="sw-brand"><strong>SSH MCP</strong><span class="sw-muted">本地工作台 · 界面草图</span></div>
+          <button type="button" class="cursor-interaction" data-action="mcp">Codex 接入</button>
+          <button type="button" class="sw-primary cursor-interaction" data-action="new">＋ 新建连接</button>
+        </header>
+        <div class="sw-content">
+          <aside class="sw-sidebar"><p class="sw-section-title">SSH 连接</p><div class="sw-connections">
+            <button type="button" class="sw-connection cursor-interaction" data-session="dev" aria-pressed="true"><strong>开发服务器</strong><small>developer@10.0.0.21</small><span class="sw-status">● 已连接</span></button>
+            <button type="button" class="sw-connection cursor-interaction" data-session="app" aria-pressed="false"><strong>应用服务器</strong><small>app@10.0.0.22</small><span class="sw-status">● 已连接</span></button>
+          </div></aside>
+          <main class="sw-main">
+            <div class="sw-title-row"><div class="sw-title"><h2 data-session-title>开发服务器</h2><span class="sw-muted" data-session-host>developer@10.0.0.21:22</span></div><span class="sw-status">已连接</span><button type="button" class="cursor-interaction" data-action="disconnect">断开连接</button></div>
+            <div class="sw-policy"><label><input type="checkbox" data-sudo>允许 sudo</label><button type="button" class="cursor-interaction" data-sudo-password-button>设置 sudo 密码</button><span class="sw-policy-state" data-sudo-state>已关闭 · 仅控制后续提权请求</span></div>
+            <p class="sw-section-title">Agent 命令记录</p>
+            <div class="sw-run-layout">
+              <nav class="sw-runs" aria-label="命令任务"><button type="button" class="cursor-interaction" data-run="0" aria-pressed="true"><code>uname -a</code><span class="sw-muted">14:32 · 完成</span></button><button type="button" class="cursor-interaction" data-run="1" aria-pressed="false"><code>df -h /</code><span class="sw-muted">14:31 · 完成</span></button><button type="button" class="cursor-interaction" data-run="2" aria-pressed="false"><code>ls /missing</code><span class="sw-muted">14:30 · 退出码 2</span></button></nav>
+              <section class="sw-run-detail" aria-label="命令结果"><code class="sw-command" data-command>uname -a</code><div class="sw-run-meta"><span>来源：Codex</span><span data-exit>退出码：0</span><span>耗时：0.12 s</span><span>普通权限</span></div><div class="sw-output-tabs"><button type="button" class="cursor-interaction" data-stream="stdout" aria-pressed="true">stdout</button><button type="button" class="cursor-interaction" data-stream="stderr" aria-pressed="false">stderr</button></div><pre data-output aria-live="polite">Linux dev-server 6.8.0 x86_64 GNU/Linux</pre></section>
+            </div>
+          </main>
+        </div>
+        <footer class="sw-footer" data-notice aria-live="polite">示例连接与结果 · 运行状态仅存内存</footer>
+      </div>
+    </section>
+    <section data-variant="连接总览" aria-label="连接总览工作台" hidden>
+      <div class="sw-app" data-app="overview">
+        <header class="sw-header"><div class="sw-brand"><strong>SSH MCP</strong><span class="sw-muted">本地工作台 · 界面草图</span></div><button type="button" class="cursor-interaction" data-action="mcp">Codex 接入</button><button type="button" class="sw-primary cursor-interaction" data-action="new">＋ 新建连接</button></header>
+        <div class="sw-table-content"><p class="sw-section-title">SSH 连接</p><div class="sw-table-connections"><button type="button" class="sw-connection cursor-interaction" data-session="dev" aria-pressed="true"><strong>开发服务器</strong><small>developer@10.0.0.21</small><span class="sw-status">● 已连接</span></button><button type="button" class="sw-connection cursor-interaction" data-session="app" aria-pressed="false"><strong>应用服务器</strong><small>app@10.0.0.22</small><span class="sw-status">● 已连接</span></button></div></div>
+        <main class="sw-main"><div class="sw-title-row"><div class="sw-title"><h2 data-session-title>开发服务器</h2><span class="sw-muted" data-session-host>developer@10.0.0.21:22</span></div><span class="sw-status">已连接</span><button type="button" class="cursor-interaction" data-action="disconnect">断开连接</button></div><div class="sw-policy"><label><input type="checkbox" data-sudo>允许 sudo</label><button type="button" class="cursor-interaction" data-sudo-password-button>设置 sudo 密码</button><span class="sw-policy-state" data-sudo-state>已关闭 · 仅控制后续提权请求</span></div><p class="sw-section-title">Agent 命令记录</p>
+          <div class="sw-run-layout"><nav class="sw-runs" aria-label="命令任务"><button type="button" class="cursor-interaction" data-run="0" aria-pressed="true"><code>uname -a</code><span class="sw-muted">14:32 · 完成</span></button><button type="button" class="cursor-interaction" data-run="1" aria-pressed="false"><code>df -h /</code><span class="sw-muted">14:31 · 完成</span></button><button type="button" class="cursor-interaction" data-run="2" aria-pressed="false"><code>ls /missing</code><span class="sw-muted">14:30 · 退出码 2</span></button></nav><section class="sw-run-detail" aria-label="命令结果"><code class="sw-command" data-command>uname -a</code><div class="sw-run-meta"><span>来源：Codex</span><span data-exit>退出码：0</span><span>耗时：0.12 s</span><span>普通权限</span></div><div class="sw-output-tabs"><button type="button" class="cursor-interaction" data-stream="stdout" aria-pressed="true">stdout</button><button type="button" class="cursor-interaction" data-stream="stderr" aria-pressed="false">stderr</button></div><pre data-output aria-live="polite">Linux dev-server 6.8.0 x86_64 GNU/Linux</pre></section></div>
+        </main><footer class="sw-footer" data-notice aria-live="polite">示例连接与结果 · 运行状态仅存内存</footer>
+      </div>
+    </section>
+  </div>
+  <section class="sw-dialog" data-new-dialog aria-label="新建 SSH 连接" hidden>
+    <h2>新建 SSH 连接</h2>
+    <div class="sw-form-grid"><label>连接名称<input type="text" placeholder="开发服务器"></label><label>主机地址<input type="text" placeholder="10.0.0.21"></label><label>端口<input type="text" value="22"></label><label>用户名<input type="text" placeholder="developer"></label><label>认证方式<select data-auth-kind><option value="password">密码</option><option value="key">私钥</option></select></label><label data-password-field>SSH 密码<input type="password" placeholder="界面示意，请勿输入真实凭据" autocomplete="off"></label><label data-key-field hidden>私钥<textarea rows="2" placeholder="粘贴私钥内容"></textarea></label><label data-key-field hidden>私钥口令<input type="password" placeholder="可选" autocomplete="off"></label></div>
+    <div class="sw-fingerprint" data-fingerprint hidden><strong>确认主机身份</strong><div>ED25519 · SHA256:example-fingerprint</div><label><input type="checkbox"> 信任本次展示的主机指纹</label></div>
+    <div class="sw-dialog-actions"><button type="button" class="sw-primary cursor-interaction" data-show-fingerprint>查看指纹步骤</button><button type="button" class="cursor-interaction" data-close-dialog>关闭</button><span class="sw-muted">界面预览 · 不建立连接</span></div>
+  </section>
+  <section class="sw-dialog" data-mcp-dialog aria-label="Codex 接入配置" hidden><h2>Codex 接入</h2><p>MCP endpoint</p><pre>http://127.0.0.1:8000/mcp</pre><p>连接方式：Streamable HTTP · 使用本地生成的 Bearer token</p><div class="sw-dialog-actions"><button type="button" class="cursor-interaction" data-close-dialog>关闭</button><span class="sw-muted">正式界面将提供 Codex 配置与连接验证</span></div></section>
+  <section class="sw-dialog" data-sudo-dialog aria-label="连接 sudo 密码设置" hidden><h2 data-sudo-dialog-title>设置 sudo 密码</h2><div class="sw-form-grid"><label>sudo 密码<input type="password" data-sudo-password placeholder="界面示意，请勿输入真实凭据" autocomplete="off"></label></div><div class="sw-dialog-actions"><button type="button" class="sw-primary cursor-interaction" data-save-sudo>保存预览</button><button type="button" class="cursor-interaction" data-clear-sudo>清除密码</button><button type="button" class="cursor-interaction" data-close-dialog>关闭</button><span class="sw-muted">正式工具仅在后端内存保存 · 不自动使用 SSH 密码</span></div><span data-sudo-password-notice aria-live="polite"></span></section>
+  <script>
+    (() => {
+      const root = document.getElementById('ssh-workbench-preview');
+      const samples = [
+        {command:'uname -a',stdout:'Linux dev-server 6.8.0 x86_64 GNU/Linux',stderr:'',exit:0},
+        {command:'df -h /',stdout:'Filesystem      Size  Used Avail Use% Mounted on\n/dev/vda1        80G   22G   58G  28% /',stderr:'',exit:0},
+        {command:'ls /missing',stdout:'',stderr:"ls: cannot access '/missing': No such file or directory",exit:2}
+      ];
+      const sudo = {dev:false,app:false};
+      const contexts = [];
+      let passwordSession = 'dev';
+      const hideDialogs = () => root.querySelectorAll('.sw-dialog').forEach(el => {el.hidden = true;});
+      root.querySelectorAll('[data-app]').forEach(app => {
+        const ctx = {app,session:'dev',run:0,stream:'stdout'};
+        contexts.push(ctx);
+        function update() {
+          const name = ctx.session === 'dev' ? '开发服务器' : '应用服务器';
+          const host = ctx.session === 'dev' ? 'developer@10.0.0.21:22' : 'app@10.0.0.22:22';
+          app.querySelector('[data-session-title]').textContent = name;
+          app.querySelector('[data-session-host]').textContent = host;
+          app.querySelectorAll('[data-session]').forEach(el => el.setAttribute('aria-pressed',String(el.dataset.session === ctx.session)));
+          app.querySelector('[data-sudo]').checked = sudo[ctx.session];
+          app.querySelector('[data-sudo-state]').textContent = sudo[ctx.session] ? '已开启 · 后续提权请求可执行' : '已关闭 · 仅控制后续提权请求';
+          app.querySelectorAll('[data-run]').forEach(el => el.setAttribute('aria-pressed',String(Number(el.dataset.run) === ctx.run)));
+          app.querySelectorAll('[data-stream]').forEach(el => el.setAttribute('aria-pressed',String(el.dataset.stream === ctx.stream)));
+          const sample = samples[ctx.run];
+          app.querySelector('[data-command]').textContent = sample.command;
+          app.querySelector('[data-exit]').textContent = '退出码：' + sample.exit;
+          const output = sample[ctx.stream];
+          app.querySelector('[data-output]').textContent = output ? (ctx.session === 'app' ? output.replace('dev-server','app-server') : output) : '（无输出）';
+        }
+        ctx.update = update;
+        app.querySelectorAll('[data-session]').forEach(el => el.addEventListener('click',() => {ctx.session = el.dataset.session;update();}));
+        app.querySelectorAll('[data-run]').forEach(el => el.addEventListener('click',() => {ctx.run = Number(el.dataset.run);update();}));
+        app.querySelectorAll('[data-stream]').forEach(el => el.addEventListener('click',() => {ctx.stream = el.dataset.stream;update();}));
+        app.querySelector('[data-sudo]').addEventListener('change',event => {sudo[ctx.session] = event.target.checked;contexts.forEach(c => c.update());});
+        app.querySelector('[data-sudo-password-button]').addEventListener('click',() => {hideDialogs();passwordSession = ctx.session;root.querySelector('[data-sudo-dialog]').hidden = false;root.querySelector('[data-sudo-dialog-title]').textContent = (ctx.session === 'dev' ? '开发服务器' : '应用服务器') + ' · sudo 密码';root.querySelector('[data-sudo-password]').value = '';root.querySelector('[data-sudo-password-notice]').textContent = '';});
+        app.querySelector('[data-action="disconnect"]').addEventListener('click',() => {app.querySelector('[data-notice]').textContent = '断开确认：实际工具将断开所选 SSH 连接，并处理其活动任务。';});
+        update();
+      });
+      root.querySelectorAll('[data-action="new"]').forEach(el => el.addEventListener('click',() => {hideDialogs();root.querySelector('[data-new-dialog]').hidden = false;}));
+      root.querySelectorAll('[data-action="mcp"]').forEach(el => el.addEventListener('click',() => {hideDialogs();root.querySelector('[data-mcp-dialog]').hidden = false;}));
+      root.querySelectorAll('[data-close-dialog]').forEach(el => el.addEventListener('click',() => {el.closest('.sw-dialog').hidden = true;root.querySelector('[data-sudo-password]').value = '';}));
+      root.querySelector('[data-save-sudo]').addEventListener('click',() => {root.querySelector('[data-sudo-password]').value = '';root.querySelector('[data-sudo-password-notice]').textContent = '保存流程预览：输入已清空，草图不保留密码。';});
+      root.querySelector('[data-clear-sudo]').addEventListener('click',() => {root.querySelector('[data-sudo-password]').value = '';root.querySelector('[data-sudo-password-notice]').textContent = '清除流程预览：该连接的 sudo 密码已清除。';});
+      root.querySelector('[data-auth-kind]').addEventListener('change',event => {const key = event.target.value === 'key';root.querySelector('[data-password-field]').hidden = key;root.querySelectorAll('[data-key-field]').forEach(el => {el.hidden = !key;});});
+      root.querySelector('[data-show-fingerprint]').addEventListener('click',() => {root.querySelector('[data-fingerprint]').hidden = false;});
+    })();
+  </script>
+</div>

@@ -1,0 +1,14 @@
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+node_modules/
+frontend/dist/
+.env
+known_hosts
+*.log
+*.tsbuildinfo
+test-results/
+playwright-report/
