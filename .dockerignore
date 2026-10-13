@@ -1,0 +1,16 @@
+.git
+.venv
+**/__pycache__
+**/.pytest_cache
+**/.mypy_cache
+**/.ruff_cache
+frontend/node_modules
+frontend/dist
+**/.env*
+known_hosts
+**/known_hosts
+*.log
+test-results
+playwright-report
+tests
+docs

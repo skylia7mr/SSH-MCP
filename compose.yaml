@@ -1,0 +1,20 @@
+services:
+  workbench:
+    build: .
+    image: ssh-mcp-workbench:local
+    init: true
+    ports:
+      - "127.0.0.1:${SSH_MCP_PORT:-8000}:${SSH_MCP_PORT:-8000}"
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      SSH_MCP_HOST: 0.0.0.0
+      SSH_MCP_PORT: ${SSH_MCP_PORT:-8000}
+      SSH_MCP_KNOWN_HOSTS: /app/trust/known_hosts
+    volumes:
+      - host-trust:/app/trust
+    restart: "no"
+    stop_grace_period: 15s
+volumes:
+  host-trust:

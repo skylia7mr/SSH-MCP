@@ -11,6 +11,15 @@ def test_real_web_authorization_and_validation(tmp_path: Path) -> None:
     with TestClient(app, base_url="http://127.0.0.1:8000") as c:
         assert c.get("/healthz").status_code == 200
         assert c.get("/api/sessions").status_code == 401
+        assert c.get("/mcp", headers={"authorization": b"Bearer \xff"}).status_code == 401
+        assert (
+            c.post(
+                "/api/auth/pair",
+                json={"code": "测" * 6},
+                headers={"origin": "http://127.0.0.1:8000"},
+            ).status_code
+            == 401
+        )
         code = app.state.services.auth.pairing.code
         assert c.post("/api/auth/pair", json={"code": code}).status_code == 403
         assert (
@@ -24,6 +33,16 @@ def test_real_web_authorization_and_validation(tmp_path: Path) -> None:
         assert paired.status_code == 200
         assert "HttpOnly" in paired.headers["set-cookie"]
         assert "SameSite=strict" in paired.headers["set-cookie"]
+        assert (
+            c.get("/api/sessions", headers={"cookie": b"ssh_mcp_session=\xff"}).status_code == 401
+        )
+        assert (
+            c.post(
+                "/api/mcp/token/reveal",
+                headers={"origin": "http://127.0.0.1:8000", "x-csrf-token": b"\xff"},
+            ).status_code
+            == 403
+        )
         assert c.get("/api/sessions").json() == []
         assert c.post("/api/mcp/token/reveal", headers=headers).status_code == 403
         headers["x-csrf-token"] = paired.json()["csrf_token"]

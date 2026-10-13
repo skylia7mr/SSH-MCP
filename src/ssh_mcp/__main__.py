@@ -19,7 +19,10 @@ def main() -> None:
         ),
         app.state.services,
     )
-    server.run()
+    try:
+        server.run()
+    except KeyboardInterrupt:
+        pass
 
 
 if __name__ == "__main__":

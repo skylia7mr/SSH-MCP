@@ -5,6 +5,7 @@ import json
 import os
 import re
 import shutil
+import signal
 from pathlib import Path
 
 import httpx
@@ -46,15 +47,22 @@ async def test_real_codex_cli_discovers_and_executes(real_sshd, tmp_path: Path):
             + sid
             + " with command exactly this JSON string: \"printf 'codex-http-proof\\n'; id -un\". Use idempotency_key codex-proof. Check stdout contains codex-http-proof and alice, exit_code is 0. Finally reply verified.",
             env={**os.environ, "SSH_MCP_CLIENT_TOKEN": token},
+            stdin=asyncio.subprocess.DEVNULL,
+            start_new_session=True,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
+        communication = asyncio.create_task(process.communicate())
         try:
-            stdout, stderr = await asyncio.wait_for(process.communicate(), 150)
+            stdout, stderr = await asyncio.wait_for(asyncio.shield(communication), 300)
         except TimeoutError:
-            process.kill()
-            await process.communicate()
-            pytest.fail("Codex CLI exceeded 150 seconds; no claim of client verification")
+            os.killpg(process.pid, signal.SIGTERM)
+            try:
+                await asyncio.wait_for(asyncio.shield(communication), 5)
+            except TimeoutError:
+                os.killpg(process.pid, signal.SIGKILL)
+                await communication
+            pytest.fail("Codex CLI exceeded 300 seconds; no claim of client verification")
         # Client logs remain in memory and are never printed, even on failure.
         assert token.encode() not in stdout + stderr
         assert real_sshd.password.encode() not in stdout + stderr

@@ -1,0 +1,32 @@
+name: verify
+on:
+  push:
+  pull_request:
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.11.0"
+          enable-cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: uv sync --locked --group dev
+      - run: npm ci && npm run typecheck && npm run build
+        working-directory: frontend
+      - run: uv run ruff check src tests && uv run ruff format --check src tests && uv run mypy src
+      - run: uv run playwright install --with-deps chromium
+      - run: docker build -t ssh-mcp-test-sshd:local tests/sshd
+      - run: uv run pytest -q
+        env:
+          SSH_MCP_REAL_TESTS: "1"
+      - run: docker compose up --build --wait --wait-timeout 180
+      - run: curl --fail http://127.0.0.1:8000/healthz && curl --fail http://127.0.0.1:8000/
+      - run: docker compose down
+        if: always()

@@ -9,9 +9,9 @@
 - [x] 3. 真实 sshd/sudo 可行性、AST 策略、行为矩阵、阶段提交
 - [x] 4. 有界任务、输出、官方 MCP HTTP 集成、阶段提交
 - [x] 5. 中文 React 工作台、订阅、真实浏览器 E2E、阶段提交
-- [ ] 6. Docker Compose、CI、文档、全量验收、交付报告、阶段提交
+- [x] 6. Docker Compose、CI、文档、全量验收、交付报告、阶段提交
 
-## 待验收项
+## 验收覆盖项（已完成）
 
 - 密码、加密私钥、两账号、错误凭据、未知/改变公钥、探测认证竞态、超时、掉线。
 - MCP 六工具，经实际 HTTP 建立官方客户端协议；真实 Codex 客户端配置与调用（CLI 已发现版本 0.159.2）。
@@ -87,3 +87,34 @@
 - 全量（不启用需本机凭据的 Codex 可选项）：62 passed, 1 skipped（45.74 秒）；独立 Codex 已实测通过，全量含 Codex 最终复核在交付记录中列出。
 - 前端 TypeScript、Vite 生产构建通过（34 modules，最终 JS 约 242 KiB），Ruff 和 mypy 27 个源文件通过。
 - 浏览器 CDN 大文件下载中断后，使用同版本 Chrome Headless Shell 153.0.8010.12 官方分发文件续传，核对完整文件 MD5 和 zip CRC，使用 Playwright 1.63.0 executable_path 实测。CI 使用标准 playwright install。
+
+## 第六阶段与最终验收
+
+- uv 锁文件恢复：`uv sync --locked --offline --group dev` 成功，61 项解析依赖、58 项当前平台安装依赖。
+- Python 最终静态检查：Ruff check 全通过，42 个 Python 文件格式检查通过，mypy 27 个源文件通过；`git diff --check` 无空白错误。
+- TypeScript + Vite 最终生产构建通过，34 modules，JS 241.56 kB、gzip 76.54 kB。npm 锁文件在本机安装和 Docker clean build 的 npm ci 真实恢复；npm audit 0 vulnerabilities。
+- 最终核心与浏览器测试：62 项通过。包含 Codex 的一轮为 62 passed / 1 failed，失败仅为 CLI 整体超过原 150 秒限时（266.80 秒含清理）；此前独立 CLI 已通过。
+- CLI 测试修复：显式 stdin=DEVNULL，独立进程组、超时清理所有子进程，整体模型调用窗口 300 秒。修复后独立真实 Codex 复核：1 passed（44.43 秒），发现、精确目标远端命令、退出 0 和 stdout 都验证；保持限定工具预授权，未修改用户 config。随后最终同一轮全量 63 passed（161.35 秒）；保留并明确区分之前的超时失败轮次。
+- Docker Compose 最终源代码生产镜像真实构建；非 root 10001:10001，loopback 8000 发布，唯一持久挂载 /app/trust。健康检查 healthy，网页 200 且包含生产 React assets。
+- 最终生产容器通过真实配对与官方 MCP HTTP initialize/tools/list/tools/call，六工具、连接列表准确为空。保持 Web SSE 打开时 docker compose down，2.17 秒结束流并清理服务；无依赖浏览器先关闭。
+- 精确本地命令 `uv run python -m ssh_mcp` 实测健康、生产网页、未认证 API 拒绝及正常退出。验收服务已停止，便于操作者按 README 启动自己的进程。
+- Docker Hub Node 大层下载缓慢，预缓存 Google registry mirror 的相同 SHA256 digest 后完成默认 Dockerfile/Compose 构建；未替换为非对应镜像或隐藏本机前端构建依赖。
+- 已提供 .env.example、Dockerfile、compose.yaml 和 CI。GitHub 托管 CI 尚未运行（未 push）；对应本地 lint/类型/真实测试、镜像构建/启动/健康检查均实际执行。
+- 实际浏览器截图：[桌面浅色](previews/workbench-actual-desktop.png)、[窄屏深色](previews/workbench-actual-mobile-dark.png)。截图使用随机本地测试会话、真实后端和真实 MCP 输出，不含密码或 token。
+
+## 阶段提交
+
+1. 6a04a31 — chore: initialize locked Python and frontend tooling
+2. 19aaa4b — feat: add local pairing and pinned SSH session management
+3. 753874a — feat: implement AST sudo policy with isolated password input
+4. ada43f7 — feat: add bounded command tasks and verified MCP HTTP tools
+5. 91f53d3 — feat: add Chinese SSH workbench with real browser verification
+6. 最终部署/文档提交：本文件随 `docs: add deployment and acceptance guides` 提交；准确 hash 由交付回复及 `git log --oneline -6` 给出。
+
+无 push、PR 或用户历史重写；known_hosts、日志、凭据、.venv、node_modules、dist 与临时实验产物未提交。
+
+- 最后启动校验发现直接使用 Uvicorn Server.run 需处理 KeyboardInterrupt，已按标准启动包装处理；精确 uv 命令复测退出码 0，无 Traceback。
+- 最后认证输入检查修复非 ASCII / 孤立 Unicode surrogate 导致 compare_digest 字符串异常：使用恒定时间字节比较。真实 API 对畸形配对码、Bearer、cookie 与 CSRF 正常拒绝；认证回归 5 passed（1.24 秒）。
+
+- 最终全量命令：`SSH_MCP_REAL_TESTS=1 SSH_MCP_CODEX_TESTS=1 SSH_MCP_CHROMIUM_EXECUTABLE=<校验的 Chromium 路径> uv run --no-sync pytest -q` → **63 passed in 161.35s**，无跳过、无 pending task 提示。此轮包含最新认证输入修正、真实 SSH/sudo、MCP、两个浏览器 E2E 与真实 Codex CLI。
+- 未指定自定义缓存的普通 `uv run python -c ...` 也验证当前默认环境可用（Python 3.12.13）；Docker 镜像 Python 3.12.15 / uv 0.11.0。

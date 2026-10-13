@@ -1,7 +1,7 @@
 import secrets
 from dataclasses import dataclass
 
-from ssh_mcp.auth.service import PairingService, TokenService
+from ssh_mcp.auth.service import PairingService, TokenService, secure_equal
 
 
 @dataclass
@@ -27,12 +27,10 @@ class AuthState:
         return (
             self.browser is not None
             and cookie is not None
-            and secrets.compare_digest(self.browser.cookie, cookie)
+            and secure_equal(self.browser.cookie, cookie)
         )
 
     def valid_csrf(self, csrf: str | None) -> bool:
         return (
-            self.browser is not None
-            and csrf is not None
-            and secrets.compare_digest(self.browser.csrf, csrf)
+            self.browser is not None and csrf is not None and secure_equal(self.browser.csrf, csrf)
         )
