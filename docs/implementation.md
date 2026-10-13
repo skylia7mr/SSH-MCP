@@ -5,7 +5,7 @@
 ## 阶段
 
 - [x] 1. 工具链、锁文件、实施方案、第一阶段提交
-- [ ] 2. 配对、Web/MCP 独立认证、host key、真实 SSH、阶段提交
+- [x] 2. 配对、Web/MCP 独立认证、host key、真实 SSH、阶段提交
 - [ ] 3. 真实 sshd/sudo 可行性、AST 策略、行为矩阵、阶段提交
 - [ ] 4. 有界任务、输出、官方 MCP HTTP 集成、阶段提交
 - [ ] 5. 中文 React 工作台、订阅、真实浏览器 E2E、阶段提交
@@ -49,3 +49,12 @@
 - 第一轮实验因 sshd 就绪阶段 ConnectionResetError 失败，已增强就绪重试；后续整轮通过。测试容器正常清理。
 - 前端依赖安装成功、npm audit 0 vulnerabilities；静态页面目前仍只是工具链占位，不代表产品 UI 完成。
 - `npm run build`：TypeScript 与 Vite 生产构建成功。第一阶段只验证工具链，尚未实现产品页面。
+
+## 第二阶段验证
+
+- Web 配对、防重放、CSRF、Host/Origin、请求大小、错误体不包含输入、cookie 重启失效、token 一次展示与轮换：真实 FastAPI/TestClient 测试通过。
+- 真正 Docker OpenSSH：双账号并行连接、密码、加密 OpenSSH 私钥、错误凭据、每连接 sudo 状态、断开与关闭清理通过。
+- AsyncSSH 协议 fixture：未知公钥显式确认、持久化公钥与 OpenSSH 格式、确认后认证前换钥拒绝、既有信任换钥拒绝、探测超时通过。
+- 阶段验证命令：`SSH_MCP_REAL_TESTS=1 uv run --no-sync pytest -q tests/unit/test_auth.py tests/unit/test_web_auth.py tests/integration/test_ssh.py tests/integration/test_host_keys.py` → 8 passed；Ruff 与 mypy 通过。
+- 发现并修复：RSA 公钥算法不等于安全签名协商算法，不强制 ssh-rsa；AsyncSSH `client_keys=[]` 会加载默认私钥，改为 None + 一次性回调；添加 bcrypt 支持加密 OpenSSH 私钥。
+- 原沙箱内 TestClient 线程唤醒卡住，正常升级权限后测试通过；用户改为 unrestricted 环境后复核正常。确认旧卡住进程归属此工作区后终止，未影响其他任务。
