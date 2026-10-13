@@ -6,7 +6,7 @@
 
 - [x] 1. 工具链、锁文件、实施方案、第一阶段提交
 - [x] 2. 配对、Web/MCP 独立认证、host key、真实 SSH、阶段提交
-- [ ] 3. 真实 sshd/sudo 可行性、AST 策略、行为矩阵、阶段提交
+- [x] 3. 真实 sshd/sudo 可行性、AST 策略、行为矩阵、阶段提交
 - [ ] 4. 有界任务、输出、官方 MCP HTTP 集成、阶段提交
 - [ ] 5. 中文 React 工作台、订阅、真实浏览器 E2E、阶段提交
 - [ ] 6. Docker Compose、CI、文档、全量验收、交付报告、阶段提交
@@ -32,7 +32,7 @@
 - AsyncSSH 2.24.1；host probe 用 `get_server_host_key(config=None)`，认证对已确认公钥进行直接 pin，禁止读取用户 SSH 配置和隐式私钥/agent。
 - bashlex 0.18 为 GPL-3.0-or-later；已核对其不完整 Bash 支持，尤其算术展开/复杂参数展开。产品许可将保持兼容，明确子集，不宣称全 Bash。来源：https://github.com/idank/bashlex 。
 
-## sudo 最小实验方案（尚待实测）
+## sudo 最小实验方案（已实测）
 
 不安装远端 helper、不写远端密码文件。单任务非 PTY exec channel，已有 POSIX shell 保存 SSH stdin 到保留 FD，命令默认 stdin 改为 `/dev/null`。AST 中 sudo 改为临时内存 shell 函数：同一父 shell 先 `sudo -S -v` 从保留 FD 认证，随后 `sudo -n` 子命令仍继承原 pipe/重定向 stdin，关闭保留 FD。仅识别到随机无换行提示时提交一次密码；缓存/NOPASSWD 不提交。
 
@@ -58,3 +58,9 @@
 - 阶段验证命令：`SSH_MCP_REAL_TESTS=1 uv run --no-sync pytest -q tests/unit/test_auth.py tests/unit/test_web_auth.py tests/integration/test_ssh.py tests/integration/test_host_keys.py` → 8 passed；Ruff 与 mypy 通过。
 - 发现并修复：RSA 公钥算法不等于安全签名协商算法，不强制 ssh-rsa；AsyncSSH `client_keys=[]` 会加载默认私钥，改为 None + 一次性回调；添加 bcrypt 支持加密 OpenSSH 私钥。
 - 原沙箱内 TestClient 线程唤醒卡住，正常升级权限后测试通过；用户改为 unrestricted 环境后复核正常。确认旧卡住进程归属此工作区后终止，未影响其他任务。
+
+## 第三阶段验证
+
+- 更新后的真实 sudo 包装重新运行独立实验，24/24 通过（alice/bash、bob/dash、nopass/bash）；密码 pipe 分离、多个 sudo、跨 7 字节提示过滤均通过。
+- AST + 输出单元用例：40 passed；普通文本、实际 command node、command/env 前缀、动态/嵌套 shell/危险选项与并行多 sudo 明确拒绝。
+- 原子授权、sudo 运行快照、错误/缺失密码、零 timestamp 缓存拒绝等完整任务行为在后续任务阶段的真实测试中验证。
