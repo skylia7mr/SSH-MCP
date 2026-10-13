@@ -8,7 +8,7 @@
 - [x] 2. 配对、Web/MCP 独立认证、host key、真实 SSH、阶段提交
 - [x] 3. 真实 sshd/sudo 可行性、AST 策略、行为矩阵、阶段提交
 - [x] 4. 有界任务、输出、官方 MCP HTTP 集成、阶段提交
-- [ ] 5. 中文 React 工作台、订阅、真实浏览器 E2E、阶段提交
+- [x] 5. 中文 React 工作台、订阅、真实浏览器 E2E、阶段提交
 - [ ] 6. Docker Compose、CI、文档、全量验收、交付报告、阶段提交
 
 ## 待验收项
@@ -75,3 +75,15 @@
 - Codex CLI 0.159.2 真实实测：1 passed（124.09 秒），经 HTTP 发现并调用 ssh_execute，得到 codex-http-proof/alice 与退出 0。CLI 本地 read-only 沙箱，两个工具使用限定服务的 approval_mode=approve。
 - 初次 Codex 实测发现默认审批策略会阻止 destructive 工具，补充客户端工具预授权后通过；未把执行工具伪装只读，未更改用户全局 config。
 - SDK 的 SSE process watcher 默认依赖进程 event loop 关闭；pytest HTTP fixture 显式取消该 watcher，避免复用测试 loop 时 pending task 提示。慢认证协议 fixture 自行取消其模拟服务器认证协程，生产资源无需此测试特例。
+
+## 第五阶段验证
+
+- 实际 FastAPI/Uvicorn 同源生产网页 + Chromium + 外部官方 MCP 客户端，两个浏览器 E2E 通过（21.20 秒），不是静态草图。
+- 配对 → 未知指纹显式确认 → 错 SSH 密码与清空/恢复 → 正确密码连接 → 独立 sudo 开关/密码 → token 首次显示并关闭清空 → MCP 核心 pipe 命令 → 网页 stdout/stderr → 刷新保留连接 → 加密私钥连接 → 两条连接主动断开。
+- sentinel 不在结果、pipe 测试文件、浏览器 DOM 或 localStorage/sessionStorage，浏览器无 pageerror；真实 sshd 诊断日志也检查 sentinel 不出现。
+- 真实分批输出验证：手动滚到顶部后追加输出不会强制到底部，“跟随最新输出”可恢复；390px 深色无横向溢出，桌面浅色实际截图已检查。
+- 浏览器 EventSource 保持打开时关闭真实 Uvicorn server，再启动新服务，旧 cookie 失效、重新配对成功。为避免持续 Web SSE 阻止 graceful shutdown，提供 WorkbenchServer 在 HTTP drain 前通知任务/订阅停止；活动任务并行回收。
+- UI 以服务器响应控制 sudo，测试需等待真实响应而不是期待乐观本地切换；处理旧轮询覆盖新政策响应的竞态。主动断开不会误显示为意外 SSH 故障；切换连接先显示记录读取状态。
+- 全量（不启用需本机凭据的 Codex 可选项）：62 passed, 1 skipped（45.74 秒）；独立 Codex 已实测通过，全量含 Codex 最终复核在交付记录中列出。
+- 前端 TypeScript、Vite 生产构建通过（34 modules，最终 JS 约 242 KiB），Ruff 和 mypy 27 个源文件通过。
+- 浏览器 CDN 大文件下载中断后，使用同版本 Chrome Headless Shell 153.0.8010.12 官方分发文件续传，核对完整文件 MD5 和 zip CRC，使用 Playwright 1.63.0 executable_path 实测。CI 使用标准 playwright install。

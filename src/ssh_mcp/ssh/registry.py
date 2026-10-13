@@ -33,6 +33,7 @@ class Session:
     sudo_version: int = 0
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     monitor: asyncio.Task[None] | None = None
+    disconnect_requested: bool = False
 
     def view(self) -> SessionView:
         return SessionView(
@@ -138,7 +139,8 @@ class SessionRegistry:
                 session.sudo_enabled = False
                 session.sudo_password = None
                 session.sudo_version += 1
-                session.error = session.error or "SSH_DISCONNECTED"
+                if not session.disconnect_requested:
+                    session.error = session.error or "SSH_DISCONNECTED"
 
     def get(self, session_id: str) -> Session:
         session = self.sessions.get(session_id)
@@ -172,6 +174,7 @@ class SessionRegistry:
     async def disconnect(self, session_id: str) -> SessionView:
         s = self.get(session_id)
         async with s.lock:
+            s.disconnect_requested = True
             s.status = SessionStatus.disconnected
             s.sudo_password = None
             s.sudo_enabled = False

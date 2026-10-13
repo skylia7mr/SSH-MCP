@@ -20,7 +20,7 @@ async def experiment(password: str) -> None:
             password=password,
             known_hosts=None,
             config=None,
-            client_keys=[],
+            client_keys=None,
             agent_path=None,
         ) as conn:
             cases = [

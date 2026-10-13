@@ -11,6 +11,7 @@ from mcp.client.streamable_http import streamable_http_client
 
 from ssh_mcp.app import create_app
 from ssh_mcp.config import Settings
+from ssh_mcp.http_server import WorkbenchServer
 
 
 @asynccontextmanager
@@ -20,8 +21,16 @@ async def running_app(tmp_path: Path, **settings):
     sock.listen(128)
     port = sock.getsockname()[1]
     app = create_app(Settings(port=port, known_hosts=tmp_path / "known_hosts", **settings))
-    server = uvicorn.Server(
-        uvicorn.Config(app, host="127.0.0.1", port=port, access_log=False, log_level="error")
+    server = WorkbenchServer(
+        uvicorn.Config(
+            app,
+            host="127.0.0.1",
+            port=port,
+            access_log=False,
+            log_level="error",
+            timeout_graceful_shutdown=5,
+        ),
+        app.state.services,
     )
     task = asyncio.create_task(server.serve(sockets=[sock]))
     try:

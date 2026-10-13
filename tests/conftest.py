@@ -81,7 +81,7 @@ def real_sshd() -> Iterator[SSHFixture]:
                 username="alice",
                 password=password,
                 known_hosts=None,
-                client_keys=[],
+                client_keys=None,
                 agent_path=None,
                 config=None,
                 connect_timeout=2,
@@ -105,4 +105,8 @@ def real_sshd() -> Iterator[SSHFixture]:
             passphrase,
         )
     finally:
-        subprocess.run(["docker", "stop", container], check=True, capture_output=True)
+        try:
+            logs = subprocess.run(["docker", "logs", container], check=True, capture_output=True)
+            assert password.encode() not in logs.stdout + logs.stderr
+        finally:
+            subprocess.run(["docker", "stop", container], check=True, capture_output=True)

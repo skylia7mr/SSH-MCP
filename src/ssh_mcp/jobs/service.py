@@ -361,8 +361,8 @@ class TaskService:
             self.scheduler.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await self.scheduler
-        for r in list(self.runs.values()):
-            if r.status not in TERMINAL:
-                await self.cancel(r.run_id)
+        await asyncio.gather(
+            *(self.cancel(r.run_id) for r in list(self.runs.values()) if r.status not in TERMINAL)
+        )
         self.runs.clear()
         self.keys.clear()

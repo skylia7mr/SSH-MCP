@@ -1,10 +1,20 @@
+import asyncio
+from collections.abc import AsyncIterator
 from typing import Annotated
 
-from fastapi import APIRouter, Request, Response
+from fastapi import APIRouter, Query, Request, Response
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field, field_validator
 
 from ssh_mcp.errors import ToolError
-from ssh_mcp.schemas import ConnectRequest, SessionView, SudoPasswordRequest, SudoRequest
+from ssh_mcp.schemas import (
+    ConnectRequest,
+    OutputView,
+    RunView,
+    SessionView,
+    SudoPasswordRequest,
+    SudoRequest,
+)
 from ssh_mcp.services import Services
 
 
@@ -104,10 +114,61 @@ def create_router(s: Services) -> APIRouter:
     @api.get("/mcp/info")
     async def mcp_info(request: Request) -> dict[str, str | bool]:
         return {
-            "endpoint": str(request.base_url).rstrip("/") + "/mcp",
+            "endpoint": f"http://127.0.0.1:{s.settings.port}/mcp",
             "token_revealed": s.auth.token_revealed,
             "token_hint": s.auth.tokens.token_hint,
             "configured_from_environment": bool(s.settings.mcp_token),
         }
+
+    @api.get("/runs")
+    async def runs(
+        session_id: str, limit: int = Query(default=100, ge=1, le=1000)
+    ) -> list[RunView]:
+        s.tasks.cleanup()
+        views = sorted(
+            (r for r in s.tasks.runs.values() if r.request.session_id == session_id),
+            key=lambda r: r.created_at,
+            reverse=True,
+        )[:limit]
+        return [
+            r.view().model_copy(
+                update={
+                    "command": r.request.command[:512],
+                    "command_truncated": len(r.request.command) > 512,
+                }
+            )
+            for r in views
+        ]
+
+    @api.get("/runs/{run_id}")
+    async def run(run_id: str) -> RunView:
+        return s.tasks.get(run_id).view()
+
+    @api.get("/runs/{run_id}/output")
+    async def output(
+        run_id: str, stdout_cursor: int = 0, stderr_cursor: int = 0, limit: int = 65536
+    ) -> OutputView:
+        return s.tasks.read_output(run_id, stdout_cursor, stderr_cursor, limit)
+
+    @api.post("/runs/{run_id}/cancel")
+    async def cancel(run_id: str) -> RunView:
+        return await s.tasks.cancel(run_id)
+
+    @api.get("/events")
+    async def events(request: Request) -> StreamingResponse:
+        cookie = request.cookies.get("ssh_mcp_session")
+
+        async def refresh() -> AsyncIterator[str]:
+            while s.auth.valid_cookie(cookie) and not s.tasks.closing:
+                if await request.is_disconnected():
+                    break
+                yield "event: refresh\ndata: {}\n\n"
+                await asyncio.sleep(0.5)
+
+        return StreamingResponse(
+            refresh(),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
+        )
 
     return api
