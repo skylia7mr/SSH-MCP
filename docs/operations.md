@@ -27,7 +27,8 @@ Ctrl-C 或 `docker compose down` 先关闭任务调度，取消活动任务并�
 | 表现 / 错误码 | 处理 |
 | --- | --- |
 | 网页未构建 / 503 | `cd frontend && npm ci && npm run build`，重启后端挂载 assets |
-| 网页会话失效 | 后端重启后用新配对码；同浏览器刷新无需重配 |
+| 网页会话失效 | 已打开的工作台检测到会话失效后自动刷新，再用新配对码；后端未重启时同浏览器刷新无需重配 |
+| 部署后界面仍是旧版 | 已打开的旧页面需要刷新一次以加载新版脚本；确认访问 Compose 发布的端口。本地运行还需重新构建 `frontend/dist` |
 | HOST_KEY_CHANGED | 核对真实主机身份，按上面流程维护对应记录 |
 | SSH_AUTHENTICATION_FAILED | 检查账号、认证方式；不启用 keyboard-interactive/2FA |
 | INVALID_PRIVATE_KEY | 使用可导入私钥，核对 passphrase；加密 OpenSSH 使用 bcrypt |

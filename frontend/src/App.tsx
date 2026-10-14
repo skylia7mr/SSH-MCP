@@ -46,8 +46,9 @@ export default function App() {
       setDialog(null);
       setSudoPassword("");
       setError(
-        "后端会话已失效，可能已重启。请用启动终端中的新配对码重新配对。",
+        "后端会话已失效，正在刷新页面。请用启动终端中的新配对码重新配对。",
       );
+      window.location.reload();
     } else setError(e instanceof Error ? e.message : "请求失败");
   }, []);
   const refresh = useCallback(async () => {

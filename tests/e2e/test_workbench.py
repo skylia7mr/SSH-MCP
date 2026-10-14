@@ -3,11 +3,38 @@ import re
 from pathlib import Path
 
 import httpx2
+import pytest
 from mcp import ClientSession
 from mcp.client.streamable_http import streamable_http_client
 from playwright.async_api import async_playwright, expect
 
 from tests.integration.test_mcp_http import running_app
+
+
+@pytest.mark.skipif(os.environ.get("SSH_MCP_REAL_TESTS") != "1", reason="set SSH_MCP_REAL_TESTS=1")
+async def test_real_browser_token_export_and_reload_after_session_reset(tmp_path: Path):
+    async with running_app(tmp_path) as (app, base), async_playwright() as pw:
+        browser = await pw.chromium.launch(
+            executable_path=os.environ.get("SSH_MCP_CHROMIUM_EXECUTABLE")
+        )
+        page = await browser.new_page()
+        try:
+            await page.goto(base)
+            await page.get_by_label("本机配对码").fill(app.state.services.auth.pairing.code)
+            await page.get_by_role("button", name="配对并进入").click()
+            await page.get_by_role("button", name="Codex / MCP 接入", exact=True).click()
+            async with page.expect_response("**/api/mcp/token/reveal") as revealed:
+                await page.get_by_role("button", name="首次显示 token").click()
+            token = (await (await revealed.value).json())["token"]
+            await expect(page.get_by_test_id("mcp-token")).to_have_value(
+                f'export SSH_MCP_CLIENT_TOKEN="{token}"'
+            )
+            async with page.expect_navigation():
+                app.state.services.auth.browser = None
+            await expect(page.get_by_role("heading", name="连接本机工作台")).to_be_visible()
+            await expect(page.get_by_test_id("mcp-token")).to_have_count(0)
+        finally:
+            await browser.close()
 
 
 async def test_real_browser_pair_connect_sudo_mcp_output_and_disconnect(real_sshd, tmp_path: Path):
@@ -47,8 +74,10 @@ async def test_real_browser_pair_connect_sudo_mcp_output_and_disconnect(real_ssh
             await expect(page.get_by_text("密码已配置", exact=False)).to_be_visible()
             await page.get_by_role("button", name="Codex / MCP 接入", exact=True).click()
             await page.get_by_role("button", name="首次显示 token").click()
-            token = await page.get_by_test_id("mcp-token").input_value()
-            assert token
+            token_command = await page.get_by_test_id("mcp-token").input_value()
+            token_match = re.fullmatch(r'export SSH_MCP_CLIENT_TOKEN="([^"]+)"', token_command)
+            assert token_match
+            token = token_match.group(1)
             await page.get_by_role("button", name="关闭弹窗").click()
             await expect(page.get_by_test_id("mcp-token")).to_have_count(0)
             async with (
