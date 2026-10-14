@@ -72,7 +72,7 @@ export function McpSetup({ onClose }: { onClose: () => void }) {
           <textarea
             readOnly
             rows={2}
-            value={token}
+            value={`export SSH_MCP_CLIENT_TOKEN="${token}"`}
             spellCheck={false}
             data-testid="mcp-token"
           />
