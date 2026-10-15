@@ -1,4 +1,4 @@
-"""Conservative bashlex AST policy; supported POSIX subset, never an execution fallback."""
+"""Preserve shell commands and rewrite identifiable sudo calls for password injection."""
 
 import re
 import secrets
@@ -12,7 +12,6 @@ import bashlex
 from ssh_mcp.errors import ToolError
 
 ASSIGNMENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*=")
-SHELLS = {"sh", "bash", "dash", "zsh", "ksh", "ash"}
 
 
 def unsupported(message: str) -> ToolError:
@@ -20,12 +19,15 @@ def unsupported(message: str) -> ToolError:
 
 
 def children(node: Any) -> Iterator[Any]:
+    seen: set[int] = set()
     for value in vars(node).values():
-        if hasattr(value, "kind"):
+        if hasattr(value, "kind") and id(value) not in seen:
+            seen.add(id(value))
             yield value
         elif isinstance(value, list):
             for item in value:
-                if hasattr(item, "kind"):
+                if hasattr(item, "kind") and id(item) not in seen:
+                    seen.add(id(item))
                     yield item
 
 
@@ -61,7 +63,11 @@ def prepare(command: str) -> CommandPlan:
         IndexError,
         RecursionError,
     ) as exc:
-        raise unsupported("语法无法可靠解析；请使用文档列出的 POSIX 命令子集") from exc
+        if re.search(r"(?<![\w])sudo(?![\w])", command):
+            raise unsupported(
+                "此语法中的 sudo 无法自动注入密码；请拆开普通命令和 sudo 命令"
+            ) from exc
+        return CommandPlan(command, command, ())
     if not nodes:
         raise unsupported("请输入实际命令")
     calls: list[SudoCall] = []
@@ -72,46 +78,6 @@ def prepare(command: str) -> CommandPlan:
     def visit(node: Any, depth: int = 0) -> None:
         if depth > 64:
             raise unsupported("命令语法嵌套过深")
-        allowed = {
-            "command",
-            "word",
-            "assignment",
-            "list",
-            "operator",
-            "pipeline",
-            "pipe",
-            "compound",
-            "reservedword",
-            "commandsubstitution",
-            "redirect",
-            "heredoc",
-            "parameter",
-        }
-        if node.kind not in allowed:
-            raise unsupported(f"暂不支持语法节点：{node.kind}")
-        if node.kind == "operator" and node.op == "&":
-            raise unsupported("暂不支持 shell 后台任务；请使用 MCP 长任务")
-        if node.kind == "redirect":
-            if node.type not in {">", ">>", "<", "<<", ">&", "<&", "<>"}:
-                raise unsupported("暂不支持此重定向")
-            if getattr(node, "input", None) not in (None, 0, 1, 2):
-                raise unsupported("FD 3 及以上保留给内部密码通道")
-            output = getattr(node, "output", None)
-            if isinstance(output, int) and output > 2:
-                raise unsupported("不可引用内部密码通道 FD")
-            if getattr(node, "heredoc", None) is not None:
-                text = command[node.output.pos[0] : node.output.pos[1]]
-                if not text.startswith(("'", '"')) and (
-                    "$" in node.heredoc.value or "`" in node.heredoc.value
-                ):
-                    raise unsupported("有展开的 heredoc 暂不支持；请引用 heredoc 分隔符")
-        if node.kind in {"word", "assignment"}:
-            raw = command[node.pos[0] : node.pos[1]]
-            # bashlex treats some complex expansions as opaque: reject all such forms.
-            if getattr(node, "parts", []) and ("${" in raw or "`" in raw or "$((" in raw):
-                raise unsupported("复杂参数/算术展开及反引号暂不支持；请使用普通参数或 $()")
-        if node.kind == "reservedword" and node.word not in {"(", ")"}:
-            raise unsupported("当前支持括号子 shell；不支持循环、函数或其他复合语法")
         if node.kind == "command":
             words = [p for p in node.parts if p.kind == "word"]
             if words:
@@ -120,7 +86,7 @@ def prepare(command: str) -> CommandPlan:
                 assignments: list[Any] = []
                 while i < len(words):
                     if not literal(words[i]):
-                        raise unsupported("动态可执行命令无法可靠管理 sudo")
+                        break
                     name = words[i].word.rsplit("/", 1)[-1]
                     if name == "command":
                         i += 1
@@ -139,7 +105,7 @@ def prepare(command: str) -> CommandPlan:
                             assignments.append(words[i])
                             i += 1
                         if i < len(words) and words[i].word.startswith("-"):
-                            raise unsupported("env 前缀不支持选项；使用 NAME=value")
+                            break
                         continue
                     break
                 if i >= len(words):
@@ -148,12 +114,6 @@ def prepare(command: str) -> CommandPlan:
                     return
                 executable = words[i]
                 name = executable.word.rsplit("/", 1)[-1]
-                if name in {"eval", "exec", "source", ".", "alias", "unalias", "trap", "set"}:
-                    raise unsupported("动态求值、exec 或修改 shell 执行策略暂不支持")
-                if name in SHELLS and any(
-                    w.word.startswith("-") and "c" in w.word for w in words[i + 1 :]
-                ):
-                    raise unsupported("嵌套 shell -c 暂不支持；将字面量命令展开到顶层")
                 if name == "sudo":
                     if executable.word not in {"sudo", "/usr/bin/sudo", "/bin/sudo"}:
                         raise unsupported("仅管理 sudo、/usr/bin/sudo 和 /bin/sudo")
@@ -182,12 +142,6 @@ def prepare(command: str) -> CommandPlan:
                         j += 1
                     if j >= len(words) or not literal(words[j]):
                         raise unsupported("sudo 子命令必须是字面量")
-                    target = words[j].word.rsplit("/", 1)[-1]
-                    if target == "sudo" or (
-                        target in SHELLS
-                        and any(w.word.startswith("-") and "c" in w.word for w in words[j + 1 :])
-                    ):
-                        raise unsupported("嵌套 sudo/shell -c 暂不支持")
                     function = "_ssh_mcp_sudo_" + secrets.token_hex(8)
                     replacement = " ".join(command[w.pos[0] : w.pos[1]] for w in assignments)
                     replacement = (replacement + " " if replacement else "") + function
@@ -208,7 +162,20 @@ def prepare(command: str) -> CommandPlan:
     for node in nodes:
         visit(node)
 
+    if not calls:
+        return CommandPlan(command, command, ())
+
     def check_pipeline(node: Any) -> None:
+        if node.kind == "operator" and node.op == "&":
+            raise unsupported("自动 sudo 认证不支持后台并发；请单独提交任务")
+        if node.kind == "processsubstitution":
+            raise unsupported("自动 sudo 认证不支持进程替换；请拆成独立命令")
+        if node.kind == "redirect":
+            if getattr(node, "input", None) not in (None, 0, 1, 2):
+                raise unsupported("自动 sudo 认证需要保留 FD 3 及以上")
+            output = getattr(node, "output", None)
+            if isinstance(output, int) and output > 2:
+                raise unsupported("不可引用内部密码通道 FD")
         if (
             node.kind == "pipeline"
             and sum(node.pos[0] <= call.start < node.pos[1] for call in calls) > 1

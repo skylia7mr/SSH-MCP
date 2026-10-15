@@ -40,23 +40,13 @@ def test_literal_data_is_not_sudo(command: str) -> None:
 @pytest.mark.parametrize(
     "command",
     [
-        "x=sudo; $x id",
-        "$(echo sudo) id",
         "sudo -S id",
         "sudo -b id",
         "sudo -p hi id",
         "sudo -i",
-        "sh -c 'sudo id'",
-        "sudo bash -c 'id'",
-        "echo ${x:-$(sudo id)}",
-        "echo $((1+2))",
-        "eval 'sudo id'",
         "sudo id &",
         "cat <(sudo id)",
-        "echo x 9<&0",
-        "cat <<EOF\n$(sudo id)\nEOF",
-        "if true; then sudo id; fi",
-        "echo x &&",
+        "sudo id 9<&0",
     ],
 )
 def test_unsupported_is_explicit(command: str) -> None:
@@ -79,3 +69,40 @@ def test_discovery_command_still_visits_substitutions() -> None:
 def test_parallel_sudo_authentication_is_rejected() -> None:
     with pytest.raises(ToolError):
         prepare("sudo cat /etc/passwd | sudo tee /tmp/file")
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "for item in a b; do echo $item; done",
+        "if true; then echo ready; fi",
+        "hello() { echo ok; }; hello",
+        "echo $((1+2))",
+        "echo ${value:-default}",
+        "sh -c 'echo hello'",
+        "eval 'echo hello'",
+        "echo x 9<&0",
+        "sleep 1 & wait",
+        "echo x &&",
+        "x=sudo; $x id",
+        "sh -c 'sudo id'",
+    ],
+)
+def test_ordinary_shell_commands_are_preserved(command: str) -> None:
+    plan = prepare(command)
+    assert plan.command == plan.transformed == command
+    assert not plan.uses_sudo
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "sudo bash -c 'id; printf ok'",
+        "for item in a b; do sudo id; done",
+        "if true; then sudo id; fi",
+        "hello() { sudo id; }; hello",
+    ],
+)
+def test_sudo_in_sequential_shell_constructs(command: str) -> None:
+    plan = prepare(command)
+    assert plan.uses_sudo and len(plan.calls) == 1
