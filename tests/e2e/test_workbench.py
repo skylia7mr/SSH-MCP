@@ -1,3 +1,4 @@
+import asyncio
 import os
 import re
 from pathlib import Path
@@ -14,7 +15,7 @@ from tests.integration.test_mcp_http import running_app
 from tests.integration.test_profiles_transfers import probe_for
 
 
-async def test_browser_reconnect_without_file_transfer_ui(real_sshd, tmp_path: Path):
+async def test_browser_reconnect_and_mcp_transfer_history(real_sshd, tmp_path: Path):
     async with running_app(tmp_path) as (app, base), async_playwright() as pw:
         services = app.state.services
         connections = {}
@@ -50,7 +51,90 @@ async def test_browser_reconnect_without_file_transfer_ui(real_sshd, tmp_path: P
             await expect(page.locator(".file-panel")).to_have_count(0)
             await expect(page.get_by_label("从电脑选择文件")).to_have_count(0)
             await expect(page.get_by_role("button", name="开始传输", exact=True)).to_have_count(0)
-            await expect(page.get_by_label("文件传输记录")).to_have_count(0)
+            history = page.get_by_role("region", name="文件传输记录", exact=True)
+            await expect(history).to_contain_text("当前连接还没有文件传输记录")
+            token = services.auth.tokens.current()
+            async with (
+                httpx2.AsyncClient(headers={"Authorization": "Bearer " + token}) as transport,
+                streamable_http_client(base + "/mcp", http_client=transport) as streams,
+                ClientSession(streams[0], streams[1]) as client,
+            ):
+                await client.initialize()
+
+                async def transfer(**arguments):
+                    result = await client.call_tool("ssh_transfer_file", arguments)
+                    assert not result.is_error, result
+                    return services.transfers.get(result.structured_content["transfer_id"])
+
+                for _ in range(services.settings.max_transfers):
+                    await services.transfers.slots.acquire()
+                try:
+                    downloaded = await transfer(
+                        source_session_id=connections["alice"].session_id,
+                        source_path="/etc/passwd",
+                        target_path="received.txt",
+                    )
+                    await expect(history).to_contain_text("received.txt")
+                    await expect(history).to_contain_text("排队中")
+                finally:
+                    for _ in range(services.settings.max_transfers):
+                        services.transfers.slots.release()
+                worker = services.transfers.workers.get(downloaded.transfer_id)
+                if worker:
+                    await asyncio.wait_for(worker, 10)
+                await expect(history).to_contain_text("已完成")
+                assert (services.transfers.root / "received.txt").is_file()
+
+                relayed = await transfer(
+                    source_session_id=connections["alice"].session_id,
+                    source_path="/etc/passwd",
+                    target_session_id=connections["bob"].session_id,
+                    target_path="/home/bob/relayed.txt",
+                )
+                worker = services.transfers.workers.get(relayed.transfer_id)
+                if worker:
+                    await asyncio.wait_for(worker, 10)
+                assert relayed.status == "finished"
+                failed = await transfer(
+                    source_session_id=connections["alice"].session_id,
+                    source_path="/missing-transfer-source",
+                    target_path="failed.txt",
+                )
+                worker = services.transfers.workers.get(failed.transfer_id)
+                if worker:
+                    await asyncio.wait_for(worker, 10)
+                await expect(history).to_contain_text("TRANSFER_FAILED")
+
+                for _ in range(services.settings.max_transfers):
+                    await services.transfers.slots.acquire()
+                try:
+                    cancelled = await transfer(
+                        source_session_id=connections["alice"].session_id,
+                        source_path="/etc/passwd",
+                        target_path="cancelled.txt",
+                    )
+                    result = await client.call_tool(
+                        "ssh_cancel_transfer", {"transfer_id": cancelled.transfer_id}
+                    )
+                    assert not result.is_error
+                finally:
+                    for _ in range(services.settings.max_transfers):
+                        services.transfers.slots.release()
+                await expect(history).to_contain_text("已取消")
+                await expect(history.locator(".transfer-record")).to_have_count(4)
+                await page.get_by_role("button", name=re.compile(r"^bob.*")).click()
+                await expect(history.locator(".transfer-record")).to_have_count(1)
+                await expect(history).to_contain_text("/home/bob/relayed.txt")
+                await expect(history).not_to_contain_text("received.txt")
+                await page.reload()
+                await expect(history.locator(".transfer-record")).to_have_count(4)
+                await page.screenshot(path=str(tmp_path / "transfers-desktop.png"), full_page=True)
+                await page.set_viewport_size({"width": 390, "height": 844})
+                await expect(history).to_be_visible()
+                assert await page.evaluate(
+                    "document.documentElement.scrollWidth <= window.innerWidth"
+                )
+                await page.screenshot(path=str(tmp_path / "transfers-mobile.png"), full_page=True)
             assert not errors
         finally:
             await browser.close()

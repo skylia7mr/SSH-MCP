@@ -25,7 +25,7 @@ flowchart LR
 
 任务由后台调度器管理，独立于 MCP HTTP 请求。状态为 queued → running → finished / failed / timed_out / cancelled / disconnected。远端非零退出仍为 finished；缺失退出信息、传输故障不会误报成功。stdout/stderr 并行读取、硬上限后继续排空；连接故障不自动重连或重放。取消尽力发信号并关闭 channel，不能保证已脱离 shell 的后代进程停止。
 
-SSE `/api/events` 只发送刷新提示，不另存输出副本。网页通过已认证 API 拉取真实元数据和增量输出；输出纯文本、ANSI 控制序列不执行，滚动时保留用户视角。列表提供有限命令预览，详情读取完整命令。没有 localStorage/sessionStorage 凭据存储。
+SSE `/api/events` 只发送刷新提示，不另存输出副本。网页通过已认证 API 拉取真实元数据和增量输出；输出纯文本、ANSI 控制序列不执行，滚动时保留用户视角。列表提供有限命令预览，详情读取完整命令。`GET /api/transfers?session_id=...&limit=100` 按来源或目标连接筛选内存中的传输记录，清理过期项后按创建时间倒序返回，最多 1000 条；网页随 SSE 提示刷新进度和结果。没有 localStorage/sessionStorage 凭据存储。
 
 启动生成短期一次性配对码；配对 cookie、CSRF、MCP token、SSH session ID 相互独立。所有 API/订阅受 cookie 认证，修改需可信 Origin 与 CSRF；MCP 需独立 Bearer，并允许本机非浏览器客户端没有 Origin。Host 限 localhost/loopback；请求体最多 256 KiB，读取最多 10 秒。API/MCP 响应 no-store。token 轮换撤销已有请求和 SSE，但不取消已经提交的后台命令。
 

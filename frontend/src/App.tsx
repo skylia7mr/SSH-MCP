@@ -12,10 +12,12 @@ import {
   stateName,
   type Session,
   type Run,
+  type Transfer,
 } from "./api";
 import { NewConnection } from "./NewConnection";
 import { McpSetup } from "./McpSetup";
 import { RunDetail } from "./RunDetail";
+import { TransferHistory } from "./TransferHistory";
 export default function App() {
   const [auth, setAuth] = useState(false);
   const [checking, setChecking] = useState(true);
@@ -27,6 +29,8 @@ export default function App() {
   selectedRef.current = selected;
   const [runs, setRuns] = useState<Run[]>([]);
   const [runsLoading, setRunsLoading] = useState(false);
+  const [transfers, setTransfers] = useState<Transfer[]>([]);
+  const [transferLimit, setTransferLimit] = useState(100);
   const [runId, setRunId] = useState("");
   const [limit, setLimit] = useState(100);
   const [error, setError] = useState("");
@@ -41,6 +45,7 @@ export default function App() {
       setCsrf("");
       setSessions([]);
       setRuns([]);
+      setTransfers([]);
       setDialog(null);
       setError(
         "后端会话已失效，正在刷新页面。请用启动终端中的新配对码重新配对。",
@@ -64,12 +69,14 @@ export default function App() {
         selectedRef.current = id;
       }
       if (id) {
-        const result = await api<Run[]>(
-          `/runs?session_id=${encodeURIComponent(id)}&limit=${limit}`,
-        );
+        const [result, transferRecords] = await Promise.all([
+          api<Run[]>(`/runs?session_id=${encodeURIComponent(id)}&limit=${limit}`),
+          api<Transfer[]>(`/transfers?session_id=${encodeURIComponent(id)}&limit=${transferLimit}`),
+        ]);
         if (selectedRef.current !== id || revision !== sessionRevision.current)
           return;
         setRuns(result);
+        setTransfers(transferRecords);
         setRunsLoading(false);
         setRunId((old) =>
           result.some((r) => r.run_id === old)
@@ -78,6 +85,7 @@ export default function App() {
         );
       } else {
         setRuns([]);
+        setTransfers([]);
         setRunId("");
       }
     } catch (e) {
@@ -86,7 +94,7 @@ export default function App() {
     } finally {
       refreshing.current = false;
     }
-  }, [handleError, limit]);
+  }, [handleError, limit, transferLimit]);
   useEffect(() => {
     void fetch("/healthz", { cache: "no-store" })
       .then((r) => setOnline(r.ok))
@@ -118,6 +126,7 @@ export default function App() {
     if (auth) {
       setRunId("");
       setRuns([]);
+      setTransfers([]);
       setRunsLoading(Boolean(selected));
       void refresh();
     }
@@ -238,6 +247,7 @@ export default function App() {
                   onClick={() => {
                     setSelected(s.session_id);
                     setLimit(100);
+                    setTransferLimit(100);
                   }}
                 >
                   <strong>{s.alias}</strong>
@@ -257,7 +267,7 @@ export default function App() {
                 <h1>从一条真实 SSH 连接开始</h1>
                 <p>
                   连接后，Agent 可以通过 MCP
-                  执行命令。执行记录与输出会在这里实时显示。
+                  执行命令、传输文件。执行记录、输出和传输进度会在这里实时显示。
                 </p>
                 <button className="primary" onClick={() => setDialog("new")}>
                   新建连接
@@ -403,6 +413,13 @@ export default function App() {
                     )}
                   </div>
                 )}
+                <TransferHistory
+                  records={transfers}
+                  sessions={sessions}
+                  loading={runsLoading}
+                  limit={transferLimit}
+                  onLoadMore={() => setTransferLimit((value) => Math.min(value + 100, 1000))}
+                />
               </>
             )}
           </main>

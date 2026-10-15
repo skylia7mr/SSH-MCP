@@ -35,6 +35,24 @@ export type Run = {
   stdout_truncated: boolean;
   stderr_truncated: boolean;
 };
+export type Transfer = {
+  transfer_id: string;
+  source_session_id: string | null;
+  source_path: string;
+  target_session_id: string | null;
+  target_path: string;
+  overwrite: boolean;
+  recursive: boolean;
+  status: string;
+  copied_bytes: number;
+  total_bytes: number | null;
+  created_at: string;
+  finished_at: string | null;
+  error_code: string | null;
+  error: string | null;
+  phase: string;
+  engine: string;
+};
 export type Output = {
   run_id: string;
   stdout: string;

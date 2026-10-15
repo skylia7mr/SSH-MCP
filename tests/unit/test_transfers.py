@@ -1,6 +1,7 @@
 import asyncio
 import os
 import shutil
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -10,7 +11,7 @@ from ssh_mcp.app import create_app
 from ssh_mcp.config import Settings
 from ssh_mcp.errors import ToolError
 from ssh_mcp.host_keys.service import HostKeyTrust
-from ssh_mcp.schemas import TransferRequest
+from ssh_mcp.schemas import TransferRequest, TransferView
 from ssh_mcp.ssh.registry import SessionRegistry
 from ssh_mcp.transfer_cache import TransferCache
 from ssh_mcp.transfers import TransferService
@@ -107,7 +108,7 @@ async def test_cancel_actual_rsync_preserves_existing_file(tmp_path: Path, monke
     await transfers.close()
 
 
-def test_browser_file_routes_removed(tmp_path: Path) -> None:
+def test_browser_file_mutation_routes_removed(tmp_path: Path) -> None:
     app = create_app(
         Settings(
             port=8000,
@@ -129,7 +130,6 @@ def test_browser_file_routes_removed(tmp_path: Path) -> None:
             ("GET", "/api/files"),
             ("POST", "/api/files/upload?name=test"),
             ("GET", "/api/files/download?path=test"),
-            ("GET", "/api/transfers"),
             ("POST", "/api/transfers"),
             ("GET", "/api/transfers/test"),
             ("POST", "/api/transfers/test/cancel"),
@@ -143,6 +143,72 @@ def test_browser_file_routes_removed(tmp_path: Path) -> None:
             == 413
         )
         assert not (tmp_path / "files").exists()
+
+
+def test_browser_transfer_history_filters_orders_and_expires_records(tmp_path: Path) -> None:
+    app = create_app(Settings(port=8000, known_hosts=tmp_path / "known_hosts"))
+    transfers = app.state.services.transfers
+    current = datetime.now(UTC)
+    for index, status in enumerate(["finished", "failed", "cancelled", "timed_out", "running"]):
+        record = TransferView(
+            transfer_id=f"transfer-{index}",
+            source_session_id="alice" if index % 2 else None,
+            target_session_id=None if index % 2 else "alice",
+            source_path="/source",
+            target_path="/target",
+            status=status,
+            copied_bytes=128,
+            total_bytes=256,
+            created_at=current + timedelta(seconds=index),
+            finished_at=current if status != "running" else None,
+            error_code="TRANSFER_FAILED" if status == "failed" else None,
+            error="传输失败" if status == "failed" else None,
+        )
+        transfers.records[record.transfer_id] = record
+    expired = transfers.records["transfer-0"].model_copy(
+        update={
+            "transfer_id": "expired",
+            "finished_at": current
+            - timedelta(seconds=transfers.settings.task_retention_seconds + 1),
+        }
+    )
+    transfers.records["expired"] = expired
+    transfers.records["other"] = expired.model_copy(
+        update={
+            "transfer_id": "other",
+            "source_session_id": "bob",
+            "target_session_id": "charlie",
+            "finished_at": current,
+        }
+    )
+    with TestClient(app, base_url="http://127.0.0.1:8000") as client:
+        assert client.get("/api/transfers?session_id=alice").status_code == 401
+        response = client.post(
+            "/api/auth/pair",
+            json={"code": app.state.services.auth.pairing.code},
+            headers={"origin": "http://127.0.0.1:8000"},
+        )
+        assert response.status_code == 200
+        records = client.get("/api/transfers?session_id=alice").json()
+        assert [record["transfer_id"] for record in records] == [
+            f"transfer-{index}" for index in reversed(range(5))
+        ]
+        assert {record["status"] for record in records} == {
+            "finished",
+            "failed",
+            "cancelled",
+            "timed_out",
+            "running",
+        }
+        assert records[0]["copied_bytes"] == 128 and records[0]["total_bytes"] == 256
+        assert records[3]["error_code"] == "TRANSFER_FAILED"
+        assert records[3]["error"] == "传输失败"
+        assert "expired" not in transfers.records
+        assert len(client.get("/api/transfers?session_id=alice&limit=2").json()) == 2
+        assert len(client.get("/api/transfers?session_id=bob").json()) == 1
+        assert client.get("/api/transfers?session_id=unknown").json() == []
+        for query in ("", "?session_id=alice&limit=0", "?session_id=alice&limit=1001"):
+            assert client.get("/api/transfers" + query).status_code == 422
 
 
 async def test_cache_keeps_latest_seven_batches_and_recovers_from_disk(tmp_path: Path) -> None:

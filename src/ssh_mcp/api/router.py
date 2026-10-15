@@ -15,6 +15,7 @@ from ssh_mcp.schemas import (
     RunView,
     SessionView,
     SudoRequest,
+    TransferView,
 )
 from ssh_mcp.services import Services
 
@@ -148,6 +149,21 @@ def create_router(s: Services) -> APIRouter:
     @api.get("/runs/{run_id}")
     async def run(run_id: str) -> RunView:
         return s.tasks.get(run_id).view()
+
+    @api.get("/transfers")
+    async def transfers(
+        session_id: str, limit: int = Query(default=100, ge=1, le=1000)
+    ) -> list[TransferView]:
+        s.transfers.cleanup()
+        return sorted(
+            (
+                record
+                for record in s.transfers.records.values()
+                if session_id in (record.source_session_id, record.target_session_id)
+            ),
+            key=lambda record: record.created_at,
+            reverse=True,
+        )[:limit]
 
     @api.get("/runs/{run_id}/output")
     async def output(

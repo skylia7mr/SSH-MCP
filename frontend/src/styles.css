@@ -216,6 +216,44 @@ h3 {
   color: var(--muted);
   margin-top: 5px;
 }
+.transfer-section {
+  margin-top: 28px;
+}
+.transfer-history {
+  list-style: none;
+  padding: 0;
+  max-height: 650px;
+  overflow: auto;
+}
+.transfer-record {
+  padding: 16px;
+  margin-bottom: 10px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--panel);
+  overflow-wrap: anywhere;
+}
+.transfer-endpoints {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin: 12px 0;
+}
+.transfer-endpoints > div {
+  flex: 1 1 200px;
+  min-width: 0;
+}
+.transfer-endpoints code {
+  display: block;
+  white-space: pre-wrap;
+}
+.transfer-record progress {
+  width: 100%;
+  height: 6px;
+  margin-top: 12px;
+  accent-color: var(--blue);
+}
 .run-detail {
   padding: 18px;
   min-width: 0;
@@ -397,6 +435,17 @@ footer {
   }
 }
 @media (max-width: 650px) {
+  .transfer-endpoints {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .transfer-endpoints > div {
+    flex-basis: auto;
+  }
+  .transfer-endpoints > span {
+    align-self: center;
+    transform: rotate(90deg);
+  }
   .workbench {
     grid-template-columns: 1fr;
   }
