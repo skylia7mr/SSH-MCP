@@ -116,7 +116,6 @@ async def test_sudo_matrix_no_sentinel_leak(real_sshd, tmp_path: Path) -> None:
         conn = registry.get(sessions["alice"]).require_connection()
         assert (await conn.run("test ! -e /tmp/side-effect")).exit_status == 0
         await registry.sudo_policy(sessions["alice"], True)
-        await registry.sudo_password(sessions["alice"], real_sshd.password)
         for case in cases:
             r, out = await execute(tasks, sessions["alice"], case)
             assert r.status == "finished" and r.exit_code == 0, (case, r.view(), out)
@@ -127,10 +126,12 @@ async def test_sudo_matrix_no_sentinel_leak(real_sshd, tmp_path: Path) -> None:
         assert file.stdout == "data\n"
         with pytest.raises(ToolError):
             await tasks.submit(ExecuteRequest(session_id=sessions["bob"], command="sudo id"))
-        await registry.sudo_password(sessions["alice"], None)
+        registry.get(sessions["alice"]).login_password = None
+        await registry.sudo_policy(sessions["alice"], True)
         r, _ = await execute(tasks, sessions["alice"], "sudo id")
         assert r.error_code == "SUDO_PASSWORD_NOT_CONFIGURED"
-        await registry.sudo_password(sessions["alice"], "deliberately-wrong")
+        registry.get(sessions["alice"]).login_password = "deliberately-wrong"
+        await registry.sudo_policy(sessions["alice"], True)
         r, _ = await execute(tasks, sessions["alice"], "sudo id")
         assert r.error_code == "SUDO_AUTHENTICATION_FAILED"
         await registry.sudo_policy(sessions["nopass"], True)
@@ -150,7 +151,6 @@ async def test_queued_policy_recheck_and_running_snapshot(real_sshd, tmp_path: P
     sid = sessions["alice"]
     try:
         await registry.sudo_policy(sid, True)
-        await registry.sudo_password(sid, real_sshd.password)
         blocker = await tasks.submit(ExecuteRequest(session_id=sid, command="sleep 2"))
         await asyncio.sleep(0.1)
         queued = await tasks.submit(
@@ -163,7 +163,6 @@ async def test_queued_policy_recheck_and_running_snapshot(real_sshd, tmp_path: P
             await registry.get(sid).require_connection().run("test ! -e /tmp/queued-side")
         ).exit_status == 0
         await registry.sudo_policy(sid, True)
-        await registry.sudo_password(sid, real_sshd.password)
         active = await tasks.submit(ExecuteRequest(session_id=sid, command="sleep 1; sudo id"))
         for _ in range(50):
             if active.status == "running":
@@ -305,7 +304,6 @@ async def test_sudo_zero_timestamp_policy_rejected_before_subcommand(real_sshd, 
         )
         assert view.status == "connected"
         await registry.sudo_policy(view.session_id, True)
-        await registry.sudo_password(view.session_id, real_sshd.password)
         run, out = await execute(tasks, view.session_id, "sudo touch /tmp/zero-policy-side-effect")
         assert run.error_code == "SUDO_POLICY_UNSUPPORTED"
         assert "__SSH_MCP_" not in out.stderr and real_sshd.password not in out.stderr

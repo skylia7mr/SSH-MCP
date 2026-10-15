@@ -33,7 +33,7 @@ approval_mode = "approve"
 
 适用于支持 Streamable HTTP 的其他 MCP 客户端：配置同一 URL，并以 header 传 token。后端不固定某个协议版本，使用 SDK 协商。实测官方 Python SDK 客户端通过 HTTP 协商 `2025-11-25`，完成 initialize、tools/list、tools/call。Codex 的实际验收状态以 [实施记录](implementation.md) 为准，不把仅协议通过描述为客户端通过。
 
-## 六个工具
+## 工具
 
 | 工具 | 关键参数 | 行为 |
 | --- | --- | --- |
@@ -43,8 +43,16 @@ approval_mode = "approve"
 | ssh_get_run | run_id | 状态、时间、退出码/信号、错误码、输出最终字节位置 |
 | ssh_read_output | run_id, stdout_cursor?, stderr_cursor?, limit? | 每流增量输出及下一字节游标，完成与截断标志 |
 | ssh_cancel_run | run_id | 尽力取消，返回实际本地终态 |
+| ssh_list_files | path, session_id? | 列出目录最多 1000 项；null session 为本地文件目录 |
+| ssh_transfer_file | source_path, target_path, source_session_id?, target_session_id?, overwrite?, recursive? | 后台 rsync 文件/目录，返回 transfer_id；默认不覆盖 |
+| ssh_get_transfer | transfer_id | 传输状态、已复制字节、总大小、错误 |
+| ssh_cancel_transfer | transfer_id | 取消传输，清理 rsync 未完成临时文件；中转批次按数量保留 |
+
+文件传输仅通过 MCP 提供，使用 rsync，复用当前 SSH 登录。支持本地↔远程；远程↔远程在容器 `/tmp/ssh-mcp-relay` 中暂存后转发，不交换远端密钥。中转缓存默认按批次保留最近 7 次，每次传输触发超额清理，活动目录在结束后再淘汰；失败或取消的批次也计数。缓存不挂载持久卷，重建容器清空。远端须安装 rsync，浏览目录仍使用 SFTP。远程路径须绝对路径，远端父目录须已存在。null session 表示 `TRANSFER_ROOT` 指定的本地目录（Docker 默认 `/tmp/ssh-mcp-files`），本地相对路径以此为根，不是客户端电脑目录；如需从宿主机放入或取出文件，可使用 `docker cp`。调用 ssh_list_files(path=".") 可列出本地文件。recursive=true 复制源目录内容，不删除目标多余文件；默认跳过已有文件，overwrite=true 更新。传输不使用 sudo。根据客户端需要为 ssh_transfer_file、ssh_cancel_transfer 设置审批方式。
 
 先发现并核对目标 `session_id`，不要仅按列表位置猜测账号。每次执行独立 channel。cwd 和 env 只影响本次，安全 shell 引用；env 最多 64 项、值最多 4096 字节。请求幂等键作用域是同连接、同进程、记录保留期；相同参数同键返回同任务，不同参数同键报 `IDEMPOTENCY_CONFLICT`。
+
+session_id 是新建/编辑时基于别名＋时间＋随机量生成的 SHA256 标识。编辑连接会立即撤销旧 ID 并取消旧命令和传输。工具只接受 ID，无别名查找或回退。收到 UNKNOWN_SESSION 必须停止当前操作并告知用户连接已变更，不得自动重新发现同别名/地址的新 ID 继续执行。普通断开/重连和服务重启保留保存的 ID。
 
 游标是保留缓冲的原始字节偏移，首次 0，后续使用返回的 next 游标；limit 每流 4..65536。UTF-8 不从字符中间拆分，未完成尾部字符等待下一块，非法字节用替换字符。不得把字符数当字节游标。`complete=true` 表示任务已终止，仍需读到最终 cursor；截断时只有上限内输出可读。重复相同游标读取相同已保留范围。过期/容量淘汰返回 `OUTPUT_EXPIRED`，很旧的 ID 超出有限提示记录后为 `UNKNOWN_RUN`。
 

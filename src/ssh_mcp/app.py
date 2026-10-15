@@ -31,6 +31,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             try:
                 yield
             finally:
+                await s.transfers.close()
                 await s.tasks.close()
                 await s.registry.close()
                 s.auth.browser = None
@@ -39,7 +40,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.services = s
     origins = [f"http://{h}:{s.settings.port}" for h in ("localhost", "127.0.0.1", "[::1]")]
     origins += ["http://localhost:5173", "http://127.0.0.1:5173"]
-    app.add_middleware(LocalSecurity, auth=s.auth, origins=origins, body_limit=256 * 1024)
+    app.add_middleware(
+        LocalSecurity,
+        auth=s.auth,
+        origins=origins,
+        body_limit=256 * 1024,
+    )
 
     @app.exception_handler(ToolError)
     async def tool_error(request: Request, exc: ToolError) -> JSONResponse:

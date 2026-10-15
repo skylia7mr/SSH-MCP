@@ -9,7 +9,13 @@ from ssh_mcp.auth.web import AuthState
 
 
 class LocalSecurity:
-    def __init__(self, app: ASGIApp, auth: AuthState, origins: list[str], body_limit: int) -> None:
+    def __init__(
+        self,
+        app: ASGIApp,
+        auth: AuthState,
+        origins: list[str],
+        body_limit: int,
+    ) -> None:
         self.app = app
         self.auth = auth
         self.origins = set(origins)

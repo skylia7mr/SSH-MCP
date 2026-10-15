@@ -7,8 +7,53 @@ import pytest
 from mcp import ClientSession
 from mcp.client.streamable_http import streamable_http_client
 from playwright.async_api import async_playwright, expect
+from pydantic import SecretStr
 
+from ssh_mcp.schemas import ConnectRequest
 from tests.integration.test_mcp_http import running_app
+from tests.integration.test_profiles_transfers import probe_for
+
+
+async def test_browser_reconnect_without_file_transfer_ui(real_sshd, tmp_path: Path):
+    async with running_app(tmp_path) as (app, base), async_playwright() as pw:
+        services = app.state.services
+        connections = {}
+        for username in ("alice", "bob"):
+            connections[username] = await services.registry.connect(
+                ConnectRequest(
+                    alias=username,
+                    host="127.0.0.1",
+                    port=real_sshd.port,
+                    username=username,
+                    password=SecretStr(real_sshd.password),
+                    probe_id=await probe_for(services.trust, real_sshd.port),
+                )
+            )
+        await services.registry.disconnect(connections["alice"].session_id)
+        browser = await pw.chromium.launch(
+            executable_path=os.environ.get("SSH_MCP_CHROMIUM_EXECUTABLE")
+        )
+        page = await browser.new_page()
+        errors = []
+        page.on("pageerror", lambda error: errors.append(str(error)))
+        try:
+            await page.goto(base)
+            await page.get_by_label("本机配对码").fill(services.auth.pairing.code)
+            await page.get_by_role("button", name="配对并进入").click()
+            await page.get_by_role("button", name="重连", exact=True).click()
+            await expect(page.get_by_label("连接别名")).to_have_value("alice")
+            await page.get_by_label("SSH 密码", exact=True).fill(real_sshd.password)
+            await page.get_by_role("button", name="检查主机指纹").click()
+            await page.get_by_role("button", name="确认指纹并连接").click()
+            await expect(page.get_by_role("button", name="断开连接", exact=True)).to_be_enabled()
+            assert services.registry.get(connections["alice"].session_id).status == "connected"
+            await expect(page.locator(".file-panel")).to_have_count(0)
+            await expect(page.get_by_label("从电脑选择文件")).to_have_count(0)
+            await expect(page.get_by_role("button", name="开始传输", exact=True)).to_have_count(0)
+            await expect(page.get_by_label("文件传输记录")).to_have_count(0)
+            assert not errors
+        finally:
+            await browser.close()
 
 
 @pytest.mark.skipif(os.environ.get("SSH_MCP_REAL_TESTS") != "1", reason="set SSH_MCP_REAL_TESTS=1")
@@ -68,10 +113,7 @@ async def test_real_browser_pair_connect_sudo_mcp_output_and_disconnect(real_ssh
             await expect(page.get_by_role("heading", name="真实密码连接")).to_be_visible()
             await page.get_by_label("允许 sudo", exact=True).click()
             await expect(page.get_by_label("允许 sudo", exact=True)).to_be_checked()
-            await page.get_by_role("button", name="设置 sudo 密码", exact=True).click()
-            await page.get_by_label("sudo 密码", exact=True).fill(real_sshd.password)
-            await page.get_by_role("button", name="保存到内存").click()
-            await expect(page.get_by_text("密码已配置", exact=False)).to_be_visible()
+            await expect(page.get_by_text("使用登录密码", exact=False)).to_be_visible()
             await page.get_by_role("button", name="Codex / MCP 接入", exact=True).click()
             await page.get_by_role("button", name="首次显示 token").click()
             token_command = await page.get_by_test_id("mcp-token").input_value()
@@ -148,15 +190,46 @@ async def test_real_browser_pair_connect_sudo_mcp_output_and_disconnect(real_ssh
                 await page.get_by_role("button", name="确认指纹并连接").click()
                 await expect(page.get_by_role("heading", name="加密私钥连接")).to_be_visible()
                 assert real_sshd.private_key not in await page.content()
+                saved_id = next(
+                    view.session_id
+                    for view in app.state.services.registry.list()
+                    if view.alias == "加密私钥连接"
+                )
+                await page.get_by_label("允许 sudo", exact=True).click()
+                await page.get_by_role("button", name="编辑连接", exact=True).click()
+                await expect(page.get_by_label("账户密码（sudo 使用，可选）")).to_have_value("")
+                await page.get_by_label("连接别名").fill("密钥连接已编辑")
+                await page.get_by_label("账户密码（sudo 使用，可选）").fill(real_sshd.password)
+                await page.get_by_role("button", name="保存连接", exact=True).click()
+                await expect(page.get_by_role("heading", name="密钥连接已编辑")).to_be_visible()
+                await expect(page.get_by_text("使用登录密码", exact=False)).to_be_visible()
+                assert saved_id not in app.state.services.registry.sessions
+                edited = next(
+                    view
+                    for view in app.state.services.registry.list()
+                    if view.alias == "密钥连接已编辑"
+                )
+                assert edited.status == "connected" and edited.account_password_configured
                 await page.get_by_role("button", name="断开连接", exact=True).click()
-                await expect(page.get_by_role("button", name="移除记录")).to_be_visible()
+                await expect(page.get_by_role("button", name="删除连接")).to_be_visible()
+                await page.get_by_role("button", name="重连", exact=True).click()
+                await expect(page.get_by_label("粘贴私钥")).to_have_count(0)
+                await page.get_by_label("私钥口令（可选）").fill(real_sshd.passphrase)
+                await page.get_by_role("button", name="检查主机指纹").click()
+                await page.get_by_role("button", name="确认指纹并连接").click()
+                await expect(
+                    page.get_by_role("button", name="断开连接", exact=True)
+                ).to_be_enabled()
+                await page.get_by_role("button", name="断开连接", exact=True).click()
+                await page.get_by_role("button", name="删除连接", exact=True).click()
+                await expect(page.get_by_role("heading", name="密钥连接已编辑")).to_have_count(0)
                 await page.set_viewport_size({"width": 390, "height": 844})
                 await page.emulate_media(color_scheme="dark")
                 assert await page.evaluate("document.documentElement.scrollWidth <= innerWidth")
                 await page.get_by_role("button", name=re.compile("真实密码连接.*已连接")).click()
                 await expect(page.get_by_role("heading", name="真实密码连接")).to_be_visible()
                 await page.get_by_role("button", name="断开连接", exact=True).click()
-                await expect(page.get_by_role("button", name="移除记录")).to_be_visible()
+                await expect(page.get_by_role("button", name="删除连接")).to_be_visible()
                 await page.screenshot(
                     path=str(tmp_path / "workbench-mobile-dark.png"), full_page=True
                 )

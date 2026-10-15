@@ -1,5 +1,6 @@
 from datetime import datetime
 from enum import StrEnum
+from typing import Literal
 
 from pydantic import BaseModel, Field, SecretStr, field_validator
 
@@ -27,6 +28,9 @@ class SessionView(BaseModel):
     host: str
     port: int
     username: str
+    auth_type: str = "password"
+    private_key_saved: bool = False
+    account_password_configured: bool = False
     status: SessionStatus
     sudo_enabled: bool
     sudo_password_configured: bool
@@ -36,7 +40,7 @@ class SessionView(BaseModel):
     error: str | None = None
 
 
-class ConnectRequest(BaseModel):
+class ConnectionInput(BaseModel):
     alias: str = Field(min_length=1, max_length=64)
     host: str = Field(min_length=1, max_length=255)
     port: int = Field(default=22, ge=1, le=65535)
@@ -44,7 +48,6 @@ class ConnectRequest(BaseModel):
     password: SecretStr | None = None
     private_key: SecretStr | None = Field(default=None, max_length=128 * 1024)
     passphrase: SecretStr | None = None
-    probe_id: str = Field(min_length=1, max_length=128)
 
     @field_validator("host")
     @classmethod
@@ -68,6 +71,15 @@ class ConnectRequest(BaseModel):
         return value
 
 
+class ConnectRequest(ConnectionInput):
+    probe_id: str = Field(min_length=1, max_length=128)
+
+
+class EditConnectionRequest(ConnectionInput):
+    auth_type: Literal["password", "key"]
+    clear_password: bool = False
+
+
 class HostKeyView(BaseModel):
     host: str
     port: int
@@ -76,19 +88,14 @@ class HostKeyView(BaseModel):
     trusted: bool
 
 
+class ReconnectRequest(BaseModel):
+    probe_id: str = Field(min_length=1, max_length=128)
+    password: SecretStr | None = Field(default=None, max_length=4096)
+    passphrase: SecretStr | None = Field(default=None, max_length=4096)
+
+
 class SudoRequest(BaseModel):
     enabled: bool
-
-
-class SudoPasswordRequest(BaseModel):
-    password: SecretStr = Field(min_length=1, max_length=4096)
-
-    @field_validator("password")
-    @classmethod
-    def valid_password(cls, value: SecretStr) -> SecretStr:
-        if any(c in value.get_secret_value() for c in "\x00\r\n"):
-            raise ValueError("sudo password must be one line without NUL")
-        return value
 
 
 class ExecuteRequest(BaseModel):
@@ -132,3 +139,39 @@ class OutputView(BaseModel):
     complete: bool
     stdout_truncated: bool
     stderr_truncated: bool
+
+
+class TransferRequest(BaseModel):
+    source_session_id: str | None = Field(default=None, min_length=1, max_length=128)
+    source_path: str = Field(min_length=1, max_length=4096)
+    target_session_id: str | None = Field(default=None, min_length=1, max_length=128)
+    target_path: str = Field(min_length=1, max_length=4096)
+    overwrite: bool = False
+    recursive: bool = False
+
+    @field_validator("source_path", "target_path")
+    @classmethod
+    def valid_path(cls, value: str) -> str:
+        if "\x00" in value:
+            raise ValueError("invalid path")
+        return value
+
+
+class TransferView(TransferRequest):
+    transfer_id: str
+    status: RunStatus = RunStatus.queued
+    copied_bytes: int = 0
+    total_bytes: int | None = None
+    created_at: datetime
+    finished_at: datetime | None = None
+    error_code: str | None = None
+    error: str | None = None
+    phase: str = "queued"
+    engine: str = "rsync"
+
+
+class FileEntry(BaseModel):
+    name: str
+    path: str
+    is_dir: bool
+    size: int | None = None

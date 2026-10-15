@@ -9,10 +9,11 @@ from pydantic import BaseModel, Field, field_validator
 from ssh_mcp.errors import ToolError
 from ssh_mcp.schemas import (
     ConnectRequest,
+    EditConnectionRequest,
     OutputView,
+    ReconnectRequest,
     RunView,
     SessionView,
-    SudoPasswordRequest,
     SudoRequest,
 )
 from ssh_mcp.services import Services
@@ -73,31 +74,35 @@ def create_router(s: Services) -> APIRouter:
     async def connect(body: ConnectRequest) -> SessionView:
         return await s.registry.connect(body)
 
+    @api.post("/sessions/{session_id}/reconnect")
+    async def reconnect(session_id: str, body: ReconnectRequest) -> SessionView:
+        return await s.registry.reconnect(session_id, body)
+
+    @api.put("/sessions/{session_id}")
+    async def edit(session_id: str, body: EditConnectionRequest) -> SessionView:
+        updated = await s.registry.edit(session_id, body)
+        await s.cancel_session_work(session_id)
+        return updated
+
     @api.get("/sessions/{session_id}")
     async def session(session_id: str) -> SessionView:
         return s.registry.get(session_id).view()
 
     @api.post("/sessions/{session_id}/disconnect")
     async def disconnect(session_id: str) -> SessionView:
-        return await s.registry.disconnect(session_id)
+        result = await s.registry.disconnect(session_id)
+        await s.cancel_session_work(session_id)
+        return result
 
     @api.delete("/sessions/{session_id}")
     async def forget(session_id: str) -> dict[str, bool]:
         await s.registry.forget(session_id)
+        await s.cancel_session_work(session_id)
         return {"removed": True}
 
     @api.put("/sessions/{session_id}/sudo")
     async def policy(session_id: str, body: SudoRequest) -> SessionView:
         return await s.registry.sudo_policy(session_id, body.enabled)
-
-    @api.put("/sessions/{session_id}/sudo/password")
-    async def password(session_id: str, body: SudoPasswordRequest) -> SessionView:
-        value = body.password.get_secret_value()
-        return await s.registry.sudo_password(session_id, value)
-
-    @api.delete("/sessions/{session_id}/sudo/password")
-    async def clear_password(session_id: str) -> SessionView:
-        return await s.registry.sudo_password(session_id, None)
 
     @api.post("/mcp/token/reveal")
     async def reveal() -> dict[str, str]:

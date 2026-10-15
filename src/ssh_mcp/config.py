@@ -1,5 +1,6 @@
 from functools import lru_cache
 from pathlib import Path
+from tempfile import gettempdir
 
 from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -11,6 +12,12 @@ class Settings(BaseSettings):
     host: str = "127.0.0.1"
     port: int = Field(default=8000, ge=1, le=65535)
     known_hosts: Path = Path("./known_hosts")
+    connections_file: Path | None = None
+    transfer_root: Path = Path(gettempdir()) / "ssh-mcp-files"
+    transfer_cache_root: Path = Path(gettempdir()) / "ssh-mcp-relay"
+    transfer_cache_keep: int = Field(default=7, ge=1)
+    max_transfers: int = Field(default=4, ge=1)
+    transfer_timeout_seconds: int = Field(default=3600, ge=1)
     mcp_token: str | None = Field(default=None, repr=False)
     max_sessions: int = Field(default=32, ge=1)
     pairing_ttl_seconds: int = Field(default=300, ge=1)

@@ -8,6 +8,8 @@ node_modules/
 frontend/dist/
 .env
 known_hosts
+connections.json
+transfers/
 *.log
 *.tsbuildinfo
 test-results/

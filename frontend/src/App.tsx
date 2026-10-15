@@ -15,7 +15,6 @@ import {
 } from "./api";
 import { NewConnection } from "./NewConnection";
 import { McpSetup } from "./McpSetup";
-import { Modal } from "./Modal";
 import { RunDetail } from "./RunDetail";
 export default function App() {
   const [auth, setAuth] = useState(false);
@@ -31,8 +30,7 @@ export default function App() {
   const [runId, setRunId] = useState("");
   const [limit, setLimit] = useState(100);
   const [error, setError] = useState("");
-  const [dialog, setDialog] = useState<"new" | "mcp" | "password" | null>(null);
-  const [sudoPassword, setSudoPassword] = useState("");
+  const [dialog, setDialog] = useState<"new" | "mcp" | "reconnect" | "edit" | null>(null);
   const [busy, setBusy] = useState(false);
   const refreshing = useRef(false);
   const sessionRevision = useRef(0);
@@ -44,7 +42,6 @@ export default function App() {
       setSessions([]);
       setRuns([]);
       setDialog(null);
-      setSudoPassword("");
       setError(
         "后端会话已失效，正在刷新页面。请用启动终端中的新配对码重新配对。",
       );
@@ -168,28 +165,6 @@ export default function App() {
       setBusy(false);
     }
   }
-  async function password(e: FormEvent) {
-    e.preventDefault();
-    if (!current) return;
-    const value = sudoPassword;
-    setSudoPassword("");
-    setBusy(true);
-    setError("");
-    try {
-      setSession(
-        await api<Session>(
-          `/sessions/${current.session_id}/sudo/password`,
-          "PUT",
-          { password: value },
-        ),
-      );
-      setDialog(null);
-    } catch (e) {
-      handleError(e);
-    } finally {
-      setBusy(false);
-    }
-  }
   return (
     <div className="app">
       <header className="topbar">
@@ -305,6 +280,10 @@ export default function App() {
                   >
                     {stateName[current.status]}
                   </span>
+                  {current.status !== "connected" && current.status !== "connecting" && (
+                    <button className="primary" onClick={() => setDialog("reconnect")}>重连</button>
+                  )}
+                  <button disabled={busy || current.status === "connecting"} onClick={() => setDialog("edit")}>编辑连接</button>
                   <button
                     disabled={busy || current.status !== "connected"}
                     onClick={async () => {
@@ -326,7 +305,7 @@ export default function App() {
                   >
                     断开连接
                   </button>
-                  {current.status !== "connected" && (
+                  {current.status !== "connecting" && (
                     <button
                       onClick={async () => {
                         try {
@@ -340,14 +319,14 @@ export default function App() {
                         }
                       }}
                     >
-                      移除记录
+                      删除连接
                     </button>
                   )}
                 </div>
                 {current.error && (
                   <p className="error">
                     连接状态：{current.error}
-                    。请核对认证或主机信息后新建连接，旧命令不会自动重放。
+                    。请重新登录，旧命令不会自动重放。
                   </p>
                 )}
                 <section className="policy">
@@ -360,54 +339,16 @@ export default function App() {
                     />
                     允许 sudo
                   </label>
-                  <button
-                    disabled={
-                      busy ||
-                      !current.sudo_enabled ||
-                      current.status !== "connected"
-                    }
-                    onClick={() => {
-                      setSudoPassword("");
-                      setDialog("password");
-                    }}
-                  >
-                    设置 sudo 密码
-                  </button>
-                  <button
-                    disabled={
-                      busy ||
-                      !current.sudo_password_configured ||
-                      current.status !== "connected"
-                    }
-                    onClick={async () => {
-                      setBusy(true);
-                      try {
-                        setSession(
-                          await api<Session>(
-                            `/sessions/${current.session_id}/sudo/password`,
-                            "DELETE",
-                          ),
-                        );
-                      } catch (e) {
-                        handleError(e);
-                      } finally {
-                        setBusy(false);
-                      }
-                    }}
-                  >
-                    清除密码
-                  </button>
                   <span className="muted">
                     {current.sudo_password_configured
-                      ? "密码已配置"
-                      : "密码未配置"}{" "}
+                      ? "使用登录密码"
+                      : current.sudo_enabled ? "未提供账户密码；仅可使用免密 sudo" : "开启后复用登录密码"}{" "}
                     · {current.sudo_enabled ? "sudo 已开启" : "sudo 已关闭"}
                   </span>
                 </section>
                 <p className="boundary">
                   开关控制可解析的 sudo 调用；脚本或程序的间接提权仍由远端账号和
-                  sudoers 限制。关闭会清除保存的 sudo
-                  密码，已开始任务继续使用授权快照。
+                  sudoers 限制。关闭会撤销后续任务的 sudo 授权；断开连接时清除内存中的账户密码。
                 </p>
                 <h2 className="section-title">Agent 命令记录</h2>
                 {runsLoading ? (
@@ -468,17 +409,18 @@ export default function App() {
         </div>
       )}
       <footer>
-        凭据、连接与任务只驻留后端内存 · 刷新页面保留当前连接 ·
-        关闭浏览器不会断开 SSH
+        连接配置与私钥保存在本机 · 密码不落盘 · 重启后重新登录即可 · 关闭浏览器不会断开 SSH
       </footer>
-      {dialog === "new" && (
+      {(dialog === "new" || ((dialog === "reconnect" || dialog === "edit") && current)) && (
         <NewConnection
+          existing={dialog !== "new" ? current : undefined}
+          editing={dialog === "edit"}
           onClose={() => setDialog(null)}
           onConnected={(s) => {
             sessionRevision.current += 1;
             selectedRef.current = s.session_id;
             setSessions((old) => [
-              ...old.filter((x) => x.session_id !== s.session_id),
+              ...old.filter((x) => x.session_id !== s.session_id && x.session_id !== (dialog === "edit" ? current?.session_id : undefined)),
               s,
             ]);
             setSelected(s.session_id);
@@ -487,35 +429,6 @@ export default function App() {
         />
       )}
       {dialog === "mcp" && <McpSetup onClose={() => setDialog(null)} />}
-      {dialog === "password" && (
-        <Modal
-          title="设置此连接的 sudo 密码"
-          onClose={() => {
-            setSudoPassword("");
-            setDialog(null);
-          }}
-        >
-          <p>
-            独立于 SSH 登录密码。按远端实际 sudo 密码策略填写；提交后不会回填。
-          </p>
-          <form onSubmit={password} autoComplete="off">
-            <label>
-              sudo 密码
-              <input
-                type="password"
-                required
-                maxLength={4096}
-                autoComplete="new-password"
-                value={sudoPassword}
-                onChange={(e) => setSudoPassword(e.target.value)}
-              />
-            </label>
-            <button className="primary" disabled={busy}>
-              保存到内存
-            </button>
-          </form>
-        </Modal>
-      )}
     </div>
   );
 }

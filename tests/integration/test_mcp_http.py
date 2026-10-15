@@ -16,6 +16,8 @@ from ssh_mcp.http_server import WorkbenchServer
 
 @asynccontextmanager
 async def running_app(tmp_path: Path, **settings):
+    settings.setdefault("transfer_root", tmp_path / "files")
+    settings.setdefault("transfer_cache_root", tmp_path / "cache")
     sock = socket.socket()
     sock.bind(("127.0.0.1", 0))
     sock.listen(128)
@@ -114,12 +116,76 @@ async def test_official_mcp_client_over_real_http_two_accounts(real_sshd, tmp_pa
                 "ssh_get_run",
                 "ssh_read_output",
                 "ssh_cancel_run",
+                "ssh_list_files",
+                "ssh_transfer_file",
+                "ssh_get_transfer",
+                "ssh_cancel_transfer",
             }
             listed = await client.call_tool("ssh_list_sessions")
             assert {s["session_id"] for s in listed.structured_content["sessions"]} == {
                 alice,
                 bob,
             }
+            content = bytes(range(256)) * 1500
+            local_root = app.state.services.transfers.root
+            local_root.mkdir(parents=True, exist_ok=True)
+            local_source = "mcp.bin"
+            (local_root / local_source).write_bytes(content)
+            for arguments in [
+                {
+                    "source_path": local_source,
+                    "target_session_id": alice,
+                    "target_path": "/home/alice/mcp.bin",
+                },
+                {
+                    "source_session_id": alice,
+                    "source_path": "/home/alice/mcp.bin",
+                    "target_session_id": bob,
+                    "target_path": "/home/bob/mcp.bin",
+                },
+                {
+                    "source_session_id": bob,
+                    "source_path": "/home/bob/mcp.bin",
+                    "target_path": "downloads/mcp.bin",
+                },
+            ]:
+                submitted = await client.call_tool("ssh_transfer_file", arguments)
+                assert not submitted.is_error, submitted
+                transfer_id = submitted.structured_content["transfer_id"]
+                for _ in range(100):
+                    status = await client.call_tool(
+                        "ssh_get_transfer", {"transfer_id": transfer_id}
+                    )
+                    if status.structured_content["status"] not in {"queued", "running"}:
+                        break
+                    await asyncio.sleep(0.02)
+                assert status.structured_content["status"] == "finished", status
+                assert status.structured_content["copied_bytes"] == len(content)
+            assert (local_root / "downloads/mcp.bin").read_bytes() == content
+            listing = await client.call_tool(
+                "ssh_list_files", {"path": "/home/bob", "session_id": bob}
+            )
+            assert any(entry["name"] == "mcp.bin" for entry in listing.structured_content["files"])
+            for _ in range(app.state.services.settings.max_transfers):
+                await app.state.services.transfers.slots.acquire()
+            try:
+                queued_transfer = await client.call_tool(
+                    "ssh_transfer_file",
+                    {
+                        "source_path": local_source,
+                        "target_path": "cancelled.bin",
+                    },
+                )
+                cancelled_transfer = await client.call_tool(
+                    "ssh_cancel_transfer",
+                    {
+                        "transfer_id": queued_transfer.structured_content["transfer_id"],
+                    },
+                )
+                assert cancelled_transfer.structured_content["status"] == "cancelled"
+            finally:
+                for _ in range(app.state.services.settings.max_transfers):
+                    app.state.services.transfers.slots.release()
             for sid, username in [(alice, "alice"), (bob, "bob")]:
                 run = await client.call_tool(
                     "ssh_execute",

@@ -4,6 +4,9 @@ export type Session = {
   host: string;
   port: number;
   username: string;
+  auth_type: "password" | "key";
+  private_key_saved: boolean;
+  account_password_configured: boolean;
   status: string;
   sudo_enabled: boolean;
   sudo_password_configured: boolean;

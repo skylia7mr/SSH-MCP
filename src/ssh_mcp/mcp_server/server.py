@@ -7,7 +7,7 @@ from mcp.types import CallToolResult, TextContent, ToolAnnotations
 from pydantic import Field, ValidationError
 
 from ssh_mcp.errors import ToolError
-from ssh_mcp.schemas import ExecuteRequest
+from ssh_mcp.schemas import ExecuteRequest, TransferRequest
 from ssh_mcp.services import Services
 
 
@@ -40,13 +40,13 @@ def build_mcp(s: Services) -> MCPServer:
         version="0.1.0",
         log_level="ERROR",
         subscriptions=False,
-        instructions="发现网页已连接的 SSH 会话，使用 session_id 执行命令。sudo 只能由网页操作者授权。长任务用 run_id 查询、读取输出。",
+        instructions="先发现网页 SSH 会话，核对 alias 和地址后只使用 session_id 执行，禁止按别名回退或猜测目标。编辑连接会撤销旧 ID；遇到 UNKNOWN_SESSION 必须终止当前操作并告知用户连接已变更，不得自动重新发现替代 ID 重试。sudo 只能由网页操作者授权。长任务用 run_id 查询。文件使用 rsync，null session_id 表示工作台本地目录，远程须绝对路径。",
     )
     readonly = ToolAnnotations(read_only_hint=True, destructive_hint=False)
 
     @mcp.tool(annotations=readonly, structured_output=False)
     async def ssh_list_sessions() -> CallToolResult:
-        """列出当前 SSH 连接元数据和每连接 sudo 状态；不返回凭据，不建立连接。"""
+        """列出 SSH 连接及 sudo 状态。核对别名和地址后使用 session_id；别名不是执行标识。编辑后旧 ID 永久失效，遇到 UNKNOWN_SESSION 应停止并通知用户，不自动改用新 ID。"""
         return result({"sessions": [v.model_dump(mode="json") for v in s.registry.list()]})
 
     @mcp.tool(annotations=readonly, structured_output=False)
@@ -73,7 +73,7 @@ def build_mcp(s: Services) -> MCPServer:
         command: Annotated[
             str,
             Field(
-                description="远端 POSIX shell 命令；独立 exec channel。支持子集见 sudo-support 文档",
+                description="交给远端登录 shell 的命令；独立非交互 exec。普通命令保留原语法，可识别的 sudo 自动注入登录密码",
                 min_length=1,
                 max_length=131072,
             ),
@@ -170,6 +170,83 @@ def build_mcp(s: Services) -> MCPServer:
 
         async def operation() -> dict[str, Any]:
             return (await s.tasks.cancel(run_id)).model_dump(mode="json")
+
+        return await guarded(operation)
+
+    @mcp.tool(annotations=readonly, structured_output=False)
+    async def ssh_list_files(
+        path: Annotated[
+            str, Field(description="目录路径，远程须为绝对路径", min_length=1, max_length=4096)
+        ],
+        session_id: Annotated[
+            str | None, Field(description="连接 ID；null 为工作台本地文件目录")
+        ] = None,
+    ) -> CallToolResult:
+        """列出目录最多1000项。文件内容不经过模型；本地路径限制在工作台文件目录内。"""
+
+        async def operation() -> dict[str, Any]:
+            files = await s.transfers.list_files(session_id, path)
+            return {
+                "files": [entry.model_dump(mode="json") for entry in files],
+                "local_root": str(s.transfers.root) if session_id is None else None,
+            }
+
+        return await guarded(operation)
+
+    @mcp.tool(
+        annotations=ToolAnnotations(read_only_hint=False, destructive_hint=True),
+        structured_output=False,
+    )
+    async def ssh_transfer_file(
+        source_path: Annotated[str, Field(description="源文件路径", min_length=1, max_length=4096)],
+        target_path: Annotated[
+            str, Field(description="目标完整文件路径", min_length=1, max_length=4096)
+        ],
+        source_session_id: Annotated[
+            str | None, Field(description="源连接 ID；null 为本地文件目录")
+        ] = None,
+        target_session_id: Annotated[
+            str | None, Field(description="目标连接 ID；null 为本地文件目录")
+        ] = None,
+        overwrite: Annotated[bool, Field(description="是否覆盖已有目标文件，默认拒绝覆盖")] = False,
+        recursive: Annotated[
+            bool, Field(description="是否递归复制目录内容；默认仅支持文件")
+        ] = False,
+    ) -> CallToolResult:
+        """后台使用 rsync 传输文件或目录，支持本地↔远程和远程↔远程。复用现有 SSH 登录，不重新输入密码。两台远程之间在容器临时目录暂存后转发，中转缓存按传输批次保留最近若干次（默认7），每次传输触发清理，正在使用的目录受保护。远程须绝对路径，本地限工作台目录；不删除目标多余文件，不自动sudo。返回transfer_id查询进度。"""
+
+        async def operation() -> dict[str, Any]:
+            return s.transfers.submit(
+                TransferRequest(
+                    source_session_id=source_session_id,
+                    source_path=source_path,
+                    target_session_id=target_session_id,
+                    target_path=target_path,
+                    overwrite=overwrite,
+                    recursive=recursive,
+                )
+            ).model_dump(mode="json")
+
+        return await guarded(operation)
+
+    @mcp.tool(annotations=readonly, structured_output=False)
+    async def ssh_get_transfer(transfer_id: str) -> CallToolResult:
+        """查询文件传输状态、已复制字节、文件大小和失败原因。"""
+
+        async def operation() -> dict[str, Any]:
+            return s.transfers.get(transfer_id).model_dump(mode="json")
+
+        return await guarded(operation)
+
+    @mcp.tool(
+        annotations=ToolAnnotations(read_only_hint=False, destructive_hint=True),
+        structured_output=False,
+    )
+    async def ssh_cancel_transfer(transfer_id: str) -> CallToolResult:
+        """取消文件传输，停止 rsync 并清理其未完成临时文件；中转批次缓存仍按保留数量淘汰。"""
+
+        async def operation() -> dict[str, Any]:
+            return (await s.transfers.cancel(transfer_id)).model_dump(mode="json")
 
         return await guarded(operation)
 

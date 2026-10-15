@@ -94,7 +94,8 @@ export function McpSetup({ onClose }: { onClose: () => void }) {
       <pre>{`[mcp_servers.ssh_workbench]\nurl = "${info?.endpoint ?? "http://127.0.0.1:8000/mcp"}"\nbearer_token_env_var = "SSH_MCP_CLIENT_TOKEN"\nstartup_timeout_sec = 15\ntool_timeout_sec = 15\n\n[mcp_servers.ssh_workbench.tools.ssh_execute]\napproval_mode = "approve"\n\n[mcp_servers.ssh_workbench.tools.ssh_cancel_run]\napproval_mode = "approve"`}</pre>
       <p className="muted">
         先调用 ssh_list_sessions，再选 session_id 调用 ssh_execute。长任务用
-        run_id 查询与分段读取。token 轮换后需更新客户端环境变量并重新接入。
+        run_id 查询与分段读取。文件使用 ssh_list_files / ssh_transfer_file，进度用 ssh_get_transfer 查询。
+        token 轮换后需更新客户端环境变量并重新接入。
       </p>
     </Modal>
   );

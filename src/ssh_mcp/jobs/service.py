@@ -212,6 +212,7 @@ class TaskService:
                 s = self.registry.get(r.request.session_id)
                 # Policy mutation and channel creation share the same lock. Password is a task-local snapshot.
                 async with s.lock:
+                    self.registry.get(r.request.session_id)
                     conn = s.require_connection()
                     if r.plan.uses_sudo and not s.sudo_enabled:
                         raise ToolError(
@@ -250,7 +251,7 @@ class TaskService:
                                 if password is None:
                                     raise ToolError(
                                         "SUDO_PASSWORD_NOT_CONFIGURED",
-                                        "sudo 需要密码，请在网页配置",
+                                        "sudo 需要账户密码，请在编辑连接中补填，或使用远端 NOPASSWD 策略",
                                     )
                                 if attempts:
                                     raise ToolError(

@@ -12,6 +12,8 @@ services:
       SSH_MCP_HOST: 0.0.0.0
       SSH_MCP_PORT: ${SSH_MCP_PORT:-8000}
       SSH_MCP_KNOWN_HOSTS: /app/trust/known_hosts
+      SSH_MCP_TRANSFER_ROOT: /tmp/ssh-mcp-files
+      SSH_MCP_TRANSFER_CACHE_ROOT: /tmp/ssh-mcp-relay
     volumes:
       - host-trust:/app/trust
     restart: "no"

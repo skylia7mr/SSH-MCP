@@ -10,21 +10,26 @@ type Probe = {
 export function NewConnection({
   onClose,
   onConnected,
+  existing,
+  editing = false,
 }: {
   onClose: () => void;
   onConnected: (s: Session) => void;
+  existing?: Session;
+  editing?: boolean;
 }) {
-  const [alias, setAlias] = useState("");
-  const [host, setHost] = useState("");
-  const [port, setPort] = useState(22);
-  const [username, setUsername] = useState("");
-  const [mode, setMode] = useState("password");
+  const [alias, setAlias] = useState(existing?.alias ?? "");
+  const [host, setHost] = useState(existing?.host ?? "");
+  const [port, setPort] = useState(existing?.port ?? 22);
+  const [username, setUsername] = useState(existing?.username ?? "");
+  const [mode, setMode] = useState(existing?.auth_type ?? "password");
   const [password, setPassword] = useState("");
   const [key, setKey] = useState("");
   const [passphrase, setPassphrase] = useState("");
   const [probe, setProbe] = useState<Probe | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [clearPassword, setClearPassword] = useState(false);
   const clearSecrets = () => {
     setPassword("");
     setKey("");
@@ -35,6 +40,16 @@ export function NewConnection({
     setBusy(true);
     setError("");
     try {
+      if (editing && existing) {
+        const updated = await api<Session>(`/sessions/${existing.session_id}`, "PUT", {
+          alias, host, port, username, auth_type: mode,
+          password: password || null, private_key: key || null, clear_password: clearPassword,
+        });
+        clearSecrets();
+        onConnected(updated);
+        onClose();
+        return;
+      }
       setProbe(await api<Probe>("/host-keys/probe", "POST", { host, port }));
     } catch (e) {
       setError(e instanceof Error ? e.message : "探测失败");
@@ -48,13 +63,13 @@ export function NewConnection({
     setError("");
     try {
       await api("/host-keys/confirm", "POST", { probe_id: probe.probe_id });
-      const s = await api<Session>("/sessions", "POST", {
+      const s = await api<Session>(existing ? `/sessions/${existing.session_id}/reconnect` : "/sessions", "POST", {
         alias,
         host,
         port,
         username,
         probe_id: probe.probe_id,
-        password: mode === "password" ? password : null,
+        password: password || null,
         private_key: mode === "key" ? key : null,
         passphrase: mode === "key" && passphrase ? passphrase : null,
       });
@@ -75,7 +90,7 @@ export function NewConnection({
   }
   return (
     <Modal
-      title="新建 SSH 连接"
+      title={editing ? `编辑连接 ${existing?.alias}` : existing ? `重连 ${existing.alias}` : "新建 SSH 连接"}
       onClose={() => {
         clearSecrets();
         onClose();
@@ -94,6 +109,7 @@ export function NewConnection({
               <input
                 required
                 maxLength={64}
+                readOnly={!!existing && !editing}
                 value={alias}
                 onChange={(e) => setAlias(e.target.value)}
               />
@@ -103,6 +119,7 @@ export function NewConnection({
               <input
                 required
                 maxLength={255}
+                readOnly={!!existing && !editing}
                 placeholder="例如 192.168.1.10"
                 value={host}
                 onChange={(e) => setHost(e.target.value)}
@@ -115,6 +132,7 @@ export function NewConnection({
                 type="number"
                 min={1}
                 max={65535}
+                readOnly={!!existing && !editing}
                 value={port}
                 onChange={(e) => setPort(Number(e.target.value))}
               />
@@ -124,6 +142,7 @@ export function NewConnection({
               <input
                 required
                 maxLength={128}
+                readOnly={!!existing && !editing}
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
               />
@@ -133,9 +152,10 @@ export function NewConnection({
             认证方式
             <select
               value={mode}
+              disabled={!!existing && !editing}
               onChange={(e) => {
                 clearSecrets();
-                setMode(e.target.value);
+                setMode(e.target.value as "password" | "key");
               }}
             >
               <option value="password">SSH 密码</option>
@@ -147,7 +167,7 @@ export function NewConnection({
               SSH 密码
               <input
                 type="password"
-                required
+                required={!editing}
                 autoComplete="new-password"
                 maxLength={4096}
                 value={password}
@@ -156,10 +176,11 @@ export function NewConnection({
             </label>
           ) : (
             <>
+              {(!existing?.private_key_saved || editing) && <>
               <label>
                 粘贴私钥
                 <textarea
-                  required
+                  required={!existing?.private_key_saved}
                   rows={6}
                   maxLength={131072}
                   value={key}
@@ -184,7 +205,9 @@ export function NewConnection({
                   }}
                 />
               </label>
-              <label>
+              </>}
+              {existing?.private_key_saved && <p className="muted">使用已保存的私钥，无需重新上传。</p>}
+              {!editing && <label>
                 私钥口令（可选）
                 <input
                   type="password"
@@ -193,13 +216,27 @@ export function NewConnection({
                   maxLength={4096}
                   onChange={(e) => setPassphrase(e.target.value)}
                 />
+              </label>}
+              <label>
+                账户密码（sudo 使用，可选）
+                <input type="password" autoComplete="new-password" maxLength={4096}
+                  value={password} onChange={(e) => setPassword(e.target.value)} />
               </label>
             </>
           )}
         </fieldset>
+        {editing && <>
+          <p className="muted">密码留空保留当前内存值；密钥留空保留已保存私钥。可在这里补填账户密码供 sudo 使用，密码不落盘。</p>
+          <label className="switch"><input type="checkbox" checked={clearPassword} onChange={(event) => {
+            setClearPassword(event.target.checked);
+            if (event.target.checked) setPassword("");
+          }} />清除当前账户密码</label>
+          <p className="boundary">保存后连接 ID 会更新，旧 ID 立即失效，旧 ID 的命令和传输会取消。修改服务器、账号或认证方式会断开连接，需要重新连接。</p>
+        </>}
+        <p className="muted">保存连接配置及私钥；密码、私钥口令只保留在本次连接的内存中。sudo 开关开启后复用账户密码。</p>
         {!probe && (
           <button className="primary" disabled={busy}>
-            {busy ? "探测主机中…" : "检查主机指纹"}
+            {busy ? "处理中…" : editing ? "保存连接" : "检查主机指纹"}
           </button>
         )}
       </form>

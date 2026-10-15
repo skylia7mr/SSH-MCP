@@ -9,6 +9,9 @@ frontend/dist
 **/.env*
 known_hosts
 **/known_hosts
+connections.json
+**/connections.json
+transfers
 *.log
 test-results
 playwright-report
